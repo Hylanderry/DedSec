@@ -209,6 +209,14 @@ if(WIN32)
   target_compile_definitions(dedsec_rdna2_flat_mubuf PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
   target_compile_options(dedsec_rdna2_flat_mubuf PRIVATE /W4 /permissive- /utf-8)
 
+  # DedSec RDNA2 DPP8/DPP16 + SMEM Translator — 200 wave primitives + 84 scalar memory forms
+  add_library(dedsec_rdna2_dpp_smem STATIC
+    shims/rdna2_dpp_smem.cpp
+  )
+  target_include_directories(dedsec_rdna2_dpp_smem PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/shims)
+  target_compile_definitions(dedsec_rdna2_dpp_smem PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(dedsec_rdna2_dpp_smem PRIVATE /W4 /permissive- /utf-8)
+
   add_executable(dedsec_rt
     src/main.cpp
     src/pe_loader.cpp
@@ -222,7 +230,7 @@ if(WIN32)
   target_compile_options(dedsec_rt PRIVATE /W4 /permissive- /utf-8)
   # Static shim tables register themselves at startup; keep the linker from dropping their objects.
   target_link_options(dedsec_rt PRIVATE /OPT:NOREF)
-  target_link_libraries(dedsec_rt PRIVATE dedsec_rt_d3d12_xs_rootsig dedsec_rt_xtaskqueue dedsec_fsr3 dedsec_gpu_tier dedsec_shader_cache dedsec_pso_warmup dedsec_async_compute dedsec_occlusion_cull dedsec_vrs dedsec_rdna2_translator dedsec_dxc_compiler dedsec_rdna2_mimg dedsec_xbox_input dedsec_gdeflate dedsec_xaudio2 dedsec_rdna2_flat_mubuf psapi)
+  target_link_libraries(dedsec_rt PRIVATE dedsec_rt_d3d12_xs_rootsig dedsec_rt_xtaskqueue dedsec_fsr3 dedsec_gpu_tier dedsec_shader_cache dedsec_pso_warmup dedsec_async_compute dedsec_occlusion_cull dedsec_vrs dedsec_rdna2_translator dedsec_dxc_compiler dedsec_rdna2_mimg dedsec_xbox_input dedsec_gdeflate dedsec_xaudio2 dedsec_rdna2_flat_mubuf dedsec_rdna2_dpp_smem psapi)
 
   # Root-signature forwarding test: needs a real PC d3d12.lib to serialize the synthetic descriptors.
   # find_library searches %LIB% (a Developer Prompt), not the Windows SDK the Visual Studio generator links
