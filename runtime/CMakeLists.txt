@@ -184,6 +184,31 @@ if(WIN32)
   target_compile_options(xbox_input_adapter_test PRIVATE /W4 /permissive- /utf-8)
   add_test(NAME xbox_input_adapter COMMAND xbox_input_adapter_test)
 
+  # DedSec GDeflate Decompressor — Xbox Series asset compression format
+  add_library(dedsec_gdeflate STATIC
+    shims/gdeflate_decompressor.cpp
+  )
+  target_include_directories(dedsec_gdeflate PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/shims)
+  target_compile_definitions(dedsec_gdeflate PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(dedsec_gdeflate PRIVATE /W4 /permissive- /utf-8)
+
+  # DedSec XAudio2 Shim — Xbox audio API over Windows XAudio2/WASAPI
+  add_library(dedsec_xaudio2 STATIC
+    shims/xaudio2_shim.cpp
+  )
+  target_include_directories(dedsec_xaudio2 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/shims)
+  target_compile_definitions(dedsec_xaudio2 PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(dedsec_xaudio2 PRIVATE /W4 /permissive- /utf-8)
+  target_link_libraries(dedsec_xaudio2 PRIVATE xaudio2)
+
+  # DedSec RDNA2 FLAT/MUBUF Translator — 133 flat + 73 buffer instruction forms
+  add_library(dedsec_rdna2_flat_mubuf STATIC
+    shims/rdna2_flat_mubuf.cpp
+  )
+  target_include_directories(dedsec_rdna2_flat_mubuf PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/shims)
+  target_compile_definitions(dedsec_rdna2_flat_mubuf PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(dedsec_rdna2_flat_mubuf PRIVATE /W4 /permissive- /utf-8)
+
   add_executable(dedsec_rt
     src/main.cpp
     src/pe_loader.cpp
@@ -197,7 +222,7 @@ if(WIN32)
   target_compile_options(dedsec_rt PRIVATE /W4 /permissive- /utf-8)
   # Static shim tables register themselves at startup; keep the linker from dropping their objects.
   target_link_options(dedsec_rt PRIVATE /OPT:NOREF)
-  target_link_libraries(dedsec_rt PRIVATE dedsec_rt_d3d12_xs_rootsig dedsec_rt_xtaskqueue dedsec_fsr3 dedsec_gpu_tier dedsec_shader_cache dedsec_pso_warmup dedsec_async_compute dedsec_occlusion_cull dedsec_vrs dedsec_rdna2_translator dedsec_dxc_compiler dedsec_rdna2_mimg dedsec_xbox_input psapi)
+  target_link_libraries(dedsec_rt PRIVATE dedsec_rt_d3d12_xs_rootsig dedsec_rt_xtaskqueue dedsec_fsr3 dedsec_gpu_tier dedsec_shader_cache dedsec_pso_warmup dedsec_async_compute dedsec_occlusion_cull dedsec_vrs dedsec_rdna2_translator dedsec_dxc_compiler dedsec_rdna2_mimg dedsec_xbox_input dedsec_gdeflate dedsec_xaudio2 dedsec_rdna2_flat_mubuf psapi)
 
   # Root-signature forwarding test: needs a real PC d3d12.lib to serialize the synthetic descriptors.
   # find_library searches %LIB% (a Developer Prompt), not the Windows SDK the Visual Studio generator links
