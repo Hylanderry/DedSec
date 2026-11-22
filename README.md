@@ -44,9 +44,10 @@ A tradução direta para HLSL SM 6.6 elimina a camada SPIR-V/Vulkan, reduzindo o
 |------------|--------|----------|
 | Verificação da cópia (Xbox 1.0.2.1) | ✅ Pronto | Detecção automática por tamanho/hash |
 | Shaders: extração e desmontagem RDNA2 | ✅ 26.503 | LLVM gfx1013, todas as formas |
-| Tradutor RDNA2 → HLSL SM 6.6 | ✅ 1.374 formas | VOP3(425) + SDWA(220) + VOP1(81) + VOP2(47) + MIMG(111) + FLAT(133) + MUBUF(73) + DPP8(100) + DPP16(100) + SMEM(84); SOP pendente |
+| Tradutor RDNA2 → HLSL SM 6.6 | ✅ 1.571 formas | VOP3(425)+SDWA(220)+SOP(197)+VOP1(81)+VOP2(47)+MIMG(111)+FLAT(133)+MUBUF(73)+DPP8(100)+DPP16(100)+SMEM(84); VINTRP/EXP/MTBUF/VOP3P pendentes |
 | VOP3: 425 formas | ✅ Completo | FMA/MAD f32/f64/f16, LERP, min3/max3/med3, mul_hi, BFE/BFI, pack/unpack, cmp→VCC, CNDMASK |
 | SDWA: 220 formas | ✅ Completo | sub-dword addressing: byte/half/dword select, sext/neg/abs, clamp+omod, VOP1+VOP2 wrapped |
+| SOP: 197 formas | ✅ Completo | SOP1(65)+SOP2(51)+SOPK(27)+SOPC(18)+SOPP(36): scalar ALU, branches, barriers, waitcnt, cache ops |
 | VOP1: 81 formas | ✅ Completo | MOV, CVT f32/i32/u32/f64/f16, RCP, RSQ, SQRT, LOG, EXP, trig, bit ops, lane read/write |
 | VOP2: 47 formas | ✅ Completo | ADD/SUB/MUL/MIN/MAX f32/f64, integer ALU, bitwise, dot products, packed f16/i16/u16 |
 | MIMG (texturas): 111 formas | ✅ Completo | image_load/store/sample/gather/atomic/get_lod/resinfo |
