@@ -44,7 +44,7 @@ A tradução direta para HLSL SM 6.6 elimina a camada SPIR-V/Vulkan, reduzindo o
 |------------|--------|----------|
 | Verificação da cópia (Xbox 1.0.2.1) | ✅ Pronto | Detecção automática por tamanho/hash |
 | Shaders: extração e desmontagem RDNA2 | ✅ 26.503 | LLVM gfx1013, todas as formas |
-| Tradutor RDNA2 → HLSL SM 6.6 | ✅ 1.571 formas | VOP3(425)+SDWA(220)+SOP(197)+VOP1(81)+VOP2(47)+MIMG(111)+FLAT(133)+MUBUF(73)+DPP8(100)+DPP16(100)+SMEM(84); VINTRP/EXP/MTBUF/VOP3P pendentes |
+| Tradutor RDNA2 → HLSL SM 6.6 | ✅ 1.630 formas (100%) | VOP3(425)+SDWA(220)+SOP(197)+VOP1(81)+VOP2(47)+MIMG(111)+FLAT(133)+MUBUF(73)+DPP8(100)+DPP16(100)+SMEM(84)+VINTRP(8)+EXP(4)+MTBUF(12)+VOP3P(29) — cobertura completa gfx1030 |
 | VOP3: 425 formas | ✅ Completo | FMA/MAD f32/f64/f16, LERP, min3/max3/med3, mul_hi, BFE/BFI, pack/unpack, cmp→VCC, CNDMASK |
 | SDWA: 220 formas | ✅ Completo | sub-dword addressing: byte/half/dword select, sext/neg/abs, clamp+omod, VOP1+VOP2 wrapped |
 | SOP: 197 formas | ✅ Completo | SOP1(65)+SOP2(51)+SOPK(27)+SOPC(18)+SOPP(36): scalar ALU, branches, barriers, waitcnt, cache ops |
