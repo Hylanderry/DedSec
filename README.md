@@ -44,10 +44,15 @@ A tradução direta para HLSL SM 6.6 elimina a camada SPIR-V/Vulkan, reduzindo o
 |------------|--------|----------|
 | Verificação da cópia (Xbox 1.0.2.1) | ✅ Pronto | Detecção automática por tamanho/hash |
 | Shaders: extração e desmontagem RDNA2 | ✅ 26.503 | LLVM gfx1013, todas as formas |
-| Tradutor RDNA2 → HLSL SM 6.6 | ✅ Em progresso | VOP1/VOP2/VOP3/SDWA/DPP/MIMG completos; FLAT/MUBUF/SOP em andamento |
+| Tradutor RDNA2 → HLSL SM 6.6 | ✅ 601 formas | MIMG(111) + FLAT(133) + MUBUF(73) + DPP8(100) + DPP16(100) + SMEM(84); VOP3/SDWA/SOP pendentes |
 | MIMG (texturas): 111 formas | ✅ Completo | image_load/store/sample/gather/atomic/get_lod/resinfo |
+| FLAT/MUBUF: 206 formas | ✅ Completo | flat load/store/atomic + buffer load/store/format/atomic/resinfo |
+| DPP8/DPP16: 200 formas | ✅ Completo | wave-lane permutation, quad shuffle, bcnt, mbcnt, perm |
+| SMEM: 84 formas | ✅ Completo | scalar load/store, buffer loads, atomics, cache ops, barrier, waitcnt |
 | Compilador DXC Runtime | ✅ Completo | dxcompiler.dll dinâmico, HLSL→DXIL SM 6.6 |
 | Adaptador de controles Xbox→PC | ✅ Completo | XInput + teclado fallback, deadzone radial/axial |
+| GDeflate Decompressor | ✅ Completo | Compressão de assets Xbox Series (DEFLATE-based, streaming) |
+| XAudio2 Shim | ✅ Completo | API áudio Xbox sobre Windows XAudio2 com fallback stub |
 | FSR3 Frame Generation + Upscaling | ✅ Integrado | Hook DX12 nativo |
 | GPU Tier Detection + Scalable Presets | ✅ Integrado | Detecção automática de hardware |
 | Shader Cache Persistente | ✅ Integrado | FNV-1a hash, cache em disco |
@@ -57,8 +62,7 @@ A tradução direta para HLSL SM 6.6 elimina a camada SPIR-V/Vulkan, reduzindo o
 | VRS Tile Classification | ✅ Integrado | Classificação de tiles para shading variável |
 | PE Loader + Import Shims | ⚠️ Parcial | Executável stand-in funcional; aguardando binário real |
 | D3D12 Xbox ABI Proxy | ⚠️ Em progresso | Device, queues, command lists, descriptors |
-| GDK Runtime (XTaskQueue, XAudio2) | ⚠️ Parcial | XTaskQueue vendored; XAudio2 pendente |
-| GDeflate Decompressor | ❌ Pendente | Compressão de assets do Xbox |
+| GDK Runtime (XTaskQueue) | ✅ Completo | XTaskQueue/XAsync vendored (libHttpClient MIT) |
 | Boot / Story Mode / Jogável | ❌ Não | Bloqueado pelo executável do jogo |
 
 ---
