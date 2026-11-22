@@ -70,10 +70,13 @@ static GpuFeatures detect_features(ID3D12Device* device) {
         f.raytracing_tier_1_1 = opts5.RaytracingTier >= D3D12_RAYTRACING_TIER_1_1;
     }
 
-    // Sampler Feedback (for texture streaming)
-    D3D12_FEATURE_DATA_D3D12_OPTIONS8 opts8{};
-    if (SUCCEEDED(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS8, &opts8, sizeof(opts8)))) {
-        f.sampler_feedback = opts8.SamplerFeedbackTier >= D3D12_SAMPLER_FEEDBACK_TIER_0_9;
+    // Sampler Feedback (for texture streaming) — check via OPTIONS7 which has SamplerFeedbackTier
+    // in all SDK versions that support the feature. Fall back to false if unavailable.
+    {
+        D3D12_FEATURE_DATA_D3D12_OPTIONS7 opts7_sf{};
+        if (SUCCEEDED(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS7, &opts7_sf, sizeof(opts7_sf)))) {
+            f.sampler_feedback = opts7_sf.SamplerFeedbackTier >= D3D12_SAMPLER_FEEDBACK_TIER_0_9;
+        }
     }
 
     // Enhanced Barriers

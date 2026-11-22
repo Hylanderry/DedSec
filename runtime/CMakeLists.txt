@@ -324,6 +324,17 @@ if(WIN32)
     else()
       message(STATUS "dxgi.lib not found: device_proxy_test is not built")
     endif()
+
+    # DedSec First Frame Test: standalone DX12 renderer proving the full pipeline
+    # (device, swapchain, command list, barriers, clear, present) without game assets.
+    if(DXGI_LIBRARY)
+      add_executable(first_frame_test
+        test/first_frame_test.cpp
+      )
+      target_link_libraries(first_frame_test PRIVATE ${D3D12_LIBRARY} ${DXGI_LIBRARY})
+      target_compile_definitions(first_frame_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+      target_compile_options(first_frame_test PRIVATE /W4 /permissive- /utf-8)
+    endif()
   else()
     message(STATUS "d3d12.lib not found: root_sig_test and device_proxy_test are not built")
   endif()
