@@ -115,6 +115,23 @@ if(WIN32)
   target_compile_options(dedsec_fsr3 PRIVATE /W4 /permissive- /utf-8)
   target_link_libraries(dedsec_fsr3 PRIVATE d3d12 dxgi dedsec_gpu_tier dedsec_shader_cache dedsec_pso_warmup dedsec_async_compute)
 
+  # DedSec RDNA2 → HLSL SM 6.6 Translator
+  add_library(dedsec_rdna2_translator STATIC
+    shims/rdna2_to_hlsl.cpp
+  )
+  target_include_directories(dedsec_rdna2_translator PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/shims)
+  target_compile_definitions(dedsec_rdna2_translator PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(dedsec_rdna2_translator PRIVATE /W4 /permissive- /utf-8)
+
+  # DedSec RDNA2 Translator unit test
+  add_executable(rdna2_translator_test
+    test/rdna2_translator_test.cpp
+  )
+  target_link_libraries(rdna2_translator_test PRIVATE dedsec_rdna2_translator)
+  target_compile_definitions(rdna2_translator_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(rdna2_translator_test PRIVATE /W4 /permissive- /utf-8)
+  add_test(NAME rdna2_translator COMMAND rdna2_translator_test)
+
   add_executable(gta6rt
     src/main.cpp
     src/pe_loader.cpp
@@ -128,7 +145,7 @@ if(WIN32)
   target_compile_options(gta6rt PRIVATE /W4 /permissive- /utf-8)
   # Static shim tables register themselves at startup; keep the linker from dropping their objects.
   target_link_options(gta6rt PRIVATE /OPT:NOREF)
-  target_link_libraries(gta6rt PRIVATE gta6rt_d3d12_xs_rootsig gta6rt_xtaskqueue dedsec_fsr3 dedsec_gpu_tier dedsec_shader_cache dedsec_pso_warmup dedsec_async_compute dedsec_occlusion_cull dedsec_vrs psapi)
+  target_link_libraries(gta6rt PRIVATE gta6rt_d3d12_xs_rootsig gta6rt_xtaskqueue dedsec_fsr3 dedsec_gpu_tier dedsec_shader_cache dedsec_pso_warmup dedsec_async_compute dedsec_occlusion_cull dedsec_vrs dedsec_rdna2_translator psapi)
 
   # Root-signature forwarding test: needs a real PC d3d12.lib to serialize the synthetic descriptors.
   # find_library searches %LIB% (a Developer Prompt), not the Windows SDK the Visual Studio generator links
