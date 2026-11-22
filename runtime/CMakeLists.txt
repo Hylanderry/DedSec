@@ -87,6 +87,24 @@ if(WIN32)
   target_compile_options(dedsec_async_compute PRIVATE /W4 /permissive- /utf-8)
   target_link_libraries(dedsec_async_compute PRIVATE d3d12 dxgi)
 
+  # DedSec Hi-Z Occlusion Culling
+  add_library(dedsec_occlusion_cull STATIC
+    shims/dedsec_occlusion_cull.cpp
+  )
+  target_include_directories(dedsec_occlusion_cull PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/shims)
+  target_compile_definitions(dedsec_occlusion_cull PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(dedsec_occlusion_cull PRIVATE /W4 /permissive- /utf-8)
+  target_link_libraries(dedsec_occlusion_cull PRIVATE d3d12 dxgi)
+
+  # DedSec Variable Rate Shading Tile Classification
+  add_library(dedsec_vrs STATIC
+    shims/dedsec_vrs.cpp
+  )
+  target_include_directories(dedsec_vrs PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/shims)
+  target_compile_definitions(dedsec_vrs PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(dedsec_vrs PRIVATE /W4 /permissive- /utf-8)
+  target_link_libraries(dedsec_vrs PRIVATE d3d12 dxgi)
+
   # DedSec FSR3 Frame Generation + Upscaling (DX12 Native Pipeline)
   add_library(dedsec_fsr3 STATIC
     shims/dedsec_fsr3.cpp
@@ -110,7 +128,7 @@ if(WIN32)
   target_compile_options(gta6rt PRIVATE /W4 /permissive- /utf-8)
   # Static shim tables register themselves at startup; keep the linker from dropping their objects.
   target_link_options(gta6rt PRIVATE /OPT:NOREF)
-  target_link_libraries(gta6rt PRIVATE gta6rt_d3d12_xs_rootsig gta6rt_xtaskqueue dedsec_fsr3 dedsec_gpu_tier dedsec_shader_cache dedsec_pso_warmup dedsec_async_compute psapi)
+  target_link_libraries(gta6rt PRIVATE gta6rt_d3d12_xs_rootsig gta6rt_xtaskqueue dedsec_fsr3 dedsec_gpu_tier dedsec_shader_cache dedsec_pso_warmup dedsec_async_compute dedsec_occlusion_cull dedsec_vrs psapi)
 
   # Root-signature forwarding test: needs a real PC d3d12.lib to serialize the synthetic descriptors.
   # find_library searches %LIB% (a Developer Prompt), not the Windows SDK the Visual Studio generator links
