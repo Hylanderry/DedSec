@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.png" alt="DedSec" width="200">
+  <img src="assets/dedsec_logo.png" alt="DedSec" width="200">
 </p>
 
 <h1 align="center"><b>DedSec</b></h1>
