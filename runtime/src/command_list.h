@@ -296,9 +296,109 @@ struct ClearDepthStencil {
     std::vector<Rect> rects;
 };
 
+// Pipeline state object reference: opaque handle captured at SetPipelineState time.
+// The replay backend resolves this to a Vulkan pipeline or DX12 PSO.
+struct SetPipelineState {
+    ResourceId pso;
+};
+
+// Root signature + root constants/tables. Captured at SetGraphicsRootSignature time.
+struct SetRootSignature {
+    ResourceId root_signature;
+};
+
+// D3D12_GPU_VIRTUAL_ADDRESS for buffer views (VB, IB, CBV, SRV, UAV).
+using GpuVirtualAddress = std::uint64_t;
+
+// IASetVertexBuffers
+struct SetVertexBuffer {
+    std::uint32_t slot;
+    GpuVirtualAddress address;
+    std::uint32_t stride;
+    std::uint32_t size;
+};
+
+// IASetIndexBuffer
+enum class IndexFormat : std::uint32_t {
+    uint16 = 0,  // DXGI_FORMAT_R16_UINT
+    uint32 = 1,  // DXGI_FORMAT_R32_UINT
+};
+
+struct SetIndexBuffer {
+    GpuVirtualAddress address;
+    IndexFormat format;
+    std::uint32_t size;
+};
+
+// RSSetViewports
+struct Viewport {
+    float top_left_x;
+    float top_left_y;
+    float width;
+    float height;
+    float min_depth;
+    float max_depth;
+};
+
+struct SetViewports {
+    std::vector<Viewport> viewports;
+};
+
+// RSSetScissorRects
+struct SetScissors {
+    std::vector<Rect> scissors;
+};
+
+// OMSetRenderTargets
+struct SetRenderTargets {
+    std::vector<TargetView> render_targets;  // up to 8
+    bool single_handle_to_range;             // if true, first entry is range start
+    TargetView depth_stencil;                // resource==0 means no DSV
+};
+
+// DrawInstanced
+struct DrawInstanced {
+    std::uint32_t vertex_count;
+    std::uint32_t instance_count;
+    std::uint32_t start_vertex;
+    std::uint32_t start_instance;
+};
+
+// DrawIndexedInstanced
+struct DrawIndexedInstanced {
+    std::uint32_t index_count;
+    std::uint32_t instance_count;
+    std::uint32_t start_index;
+    std::int32_t base_vertex;
+    std::uint32_t start_instance;
+};
+
+// Dispatch
+struct Dispatch {
+    std::uint32_t x;
+    std::uint32_t y;
+    std::uint32_t z;
+};
+
+// SetGraphicsRootConstant / RootConstants
+struct SetRootConstants {
+    std::uint32_t root_parameter_index;
+    std::uint32_t num_values;
+    std::vector<std::uint32_t> values;
+};
+
+// SetGraphicsRootDescriptorTable (bindless GPU VA)
+struct SetRootDescriptorTable {
+    std::uint32_t root_parameter_index;
+    GpuVirtualAddress gpu_address;
+};
+
 using Command = std::variant<TransitionBarrier, UavBarrier, AliasingBarrier, GlobalBarrier, BufferBarrier,
                              TextureBarrier, ClearRenderTarget, ClearDepthStencil, CopyBuffer, CopyTexture,
-                             CopyResource, ResolveSubresource>;
+                             CopyResource, ResolveSubresource, SetPipelineState, SetRootSignature,
+                             SetVertexBuffer, SetIndexBuffer, SetViewports, SetScissors, SetRenderTargets,
+                             DrawInstanced, DrawIndexedInstanced, Dispatch, SetRootConstants,
+                             SetRootDescriptorTable>;
 
 class CommandList {
 public:
@@ -380,6 +480,97 @@ public:
         if (!flags || (flags & ~(clear_depth | clear_stencil))) return false;
         if ((flags & clear_depth) && !(depth >= 0.0f && depth <= 1.0f)) return false;
         return append(ClearDepthStencil{target, flags, depth, stencil, {rects.begin(), rects.end()}});
+    }
+
+    // --- Pipeline State & Root Signature ---
+
+    bool set_pipeline_state(ResourceId pso) {
+        if (!pso) return false;
+        return append(SetPipelineState{pso});
+    }
+
+    bool set_root_signature(ResourceId root_signature) {
+        if (!root_signature) return false;
+        return append(SetRootSignature{root_signature});
+    }
+
+    // --- Input Assembly ---
+
+    bool set_vertex_buffer(std::uint32_t slot, GpuVirtualAddress address, std::uint32_t stride, std::uint32_t size) {
+        if (!address || !stride || !size) return false;
+        return append(SetVertexBuffer{slot, address, stride, size});
+    }
+
+    bool set_index_buffer(GpuVirtualAddress address, IndexFormat format, std::uint32_t size) {
+        if (!address || !size) return false;
+        return append(SetIndexBuffer{address, format, size});
+    }
+
+    // --- Rasterizer State ---
+
+    bool set_viewports(std::span<const Viewport> viewports) {
+        if (viewports.empty() || viewports.size() > 16) return false;
+        for (const auto& vp : viewports) {
+            if (vp.width <= 0.0f || vp.height <= 0.0f) return false;
+            if (!(vp.min_depth >= 0.0f && vp.max_depth <= 1.0f && vp.min_depth <= vp.max_depth)) return false;
+        }
+        return append(SetViewports{{viewports.begin(), viewports.end()}});
+    }
+
+    bool set_scissors(std::span<const Rect> scissors) {
+        if (scissors.empty() || scissors.size() > 16) return false;
+        for (const auto& r : scissors) {
+            if (r.right <= r.left || r.bottom <= r.top) return false;
+        }
+        return append(SetScissors{{scissors.begin(), scissors.end()}});
+    }
+
+    // --- Output Merger ---
+
+    bool set_render_targets(std::span<const TargetView> render_targets, bool single_handle_to_range,
+                            const TargetView& depth_stencil = {}) {
+        if (render_targets.size() > 8) return false;
+        for (const auto& rt : render_targets) {
+            if (!valid(rt)) return false;
+        }
+        if (depth_stencil.resource && !valid(depth_stencil)) return false;
+        return append(SetRenderTargets{{render_targets.begin(), render_targets.end()},
+                                       single_handle_to_range, depth_stencil});
+    }
+
+    // --- Draw Commands ---
+
+    bool draw_instanced(std::uint32_t vertex_count, std::uint32_t instance_count,
+                        std::uint32_t start_vertex = 0, std::uint32_t start_instance = 0) {
+        if (!vertex_count || !instance_count) return false;
+        return append(DrawInstanced{vertex_count, instance_count, start_vertex, start_instance});
+    }
+
+    bool draw_indexed_instanced(std::uint32_t index_count, std::uint32_t instance_count,
+                                std::uint32_t start_index = 0, std::int32_t base_vertex = 0,
+                                std::uint32_t start_instance = 0) {
+        if (!index_count || !instance_count) return false;
+        return append(DrawIndexedInstanced{index_count, instance_count, start_index, base_vertex, start_instance});
+    }
+
+    // --- Compute Dispatch ---
+
+    bool dispatch(std::uint32_t x, std::uint32_t y, std::uint32_t z) {
+        if (!x || !y || !z) return false;
+        return append(Dispatch{x, y, z});
+    }
+
+    // --- Root Parameters ---
+
+    bool set_root_constants(std::uint32_t root_parameter_index, std::span<const std::uint32_t> values) {
+        if (values.empty()) return false;
+        return append(SetRootConstants{root_parameter_index, static_cast<std::uint32_t>(values.size()),
+                                       {values.begin(), values.end()}});
+    }
+
+    bool set_root_descriptor_table(std::uint32_t root_parameter_index, GpuVirtualAddress gpu_address) {
+        if (!gpu_address) return false;
+        return append(SetRootDescriptorTable{root_parameter_index, gpu_address});
     }
 
     bool close() {
