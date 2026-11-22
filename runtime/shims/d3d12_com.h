@@ -1,0 +1,77 @@
+// D3D12 COM objects over the Vulkan backend (src/vulkan_backend.h): command allocator, graphics command list,
+// command queue and fence. Their vtables are the Windows SDK's (ID3D12GraphicsCommandList8, ID3D12CommandQueue,
+// ID3D12CommandAllocator, ID3D12Fence1); every method not implemented here is a generated stub that reports its
+// name once (tools/gen_d3d12_stubs.py). The Xbox-specific slots measured for the device do not apply to these
+// interfaces as far as is known; docs/d3d12_vulkan.md section 3.1 lists what is still unverified.
+//
+// Contracts with the rest of the layer (the device proxy that will hand these objects out):
+// - an ID3D12Resource's dedsec::ResourceId is its pointer value; the device registers it with the VulkanContext;
+// - the CPU handle of an RTV or DSV points at a dedsec::TargetView in the device's descriptor heap.
+#pragma once
+
+#include <windows.h>
+#include <d3d12.h>
+
+#include "../src/vulkan_backend.h"
+
+namespace rt::d3d12 {
+
+// `device` (optional) is what the object's GetDevice returns; the object holds a reference to it.
+HRESULT create_command_queue(dedsec::VulkanContext& context, VkQueue queue, std::uint32_t queue_family,
+                             const D3D12_COMMAND_QUEUE_DESC& desc, REFIID riid, void** out,
+                             IUnknown* device = nullptr);
+HRESULT create_command_allocator(D3D12_COMMAND_LIST_TYPE type, REFIID riid, void** out, IUnknown* device = nullptr);
+HRESULT create_command_list(D3D12_COMMAND_LIST_TYPE type, ID3D12CommandAllocator* allocator, REFIID riid,
+                            void** out, IUnknown* device = nullptr);
+HRESULT create_fence(dedsec::VulkanContext& context, UINT64 initial_value, D3D12_FENCE_FLAGS flags, REFIID riid,
+                     void** out, IUnknown* device = nullptr);
+
+// The Vulkan objects a D3D12 device runs on. Vulkan 1.3 with dynamicRendering, synchronization2, timelineSemaphore
+// and (when separate_depth_stencil_layouts is set) separateDepthStencilLayouts enabled.
+struct VulkanDeviceInfo {
+    PFN_vkGetInstanceProcAddr get_instance_proc = nullptr;
+    VkInstance instance = VK_NULL_HANDLE;
+    VkPhysicalDevice physical = VK_NULL_HANDLE;
+    VkDevice device = VK_NULL_HANDLE;
+    VkQueue queue = VK_NULL_HANDLE;  // a graphics queue; every D3D12 queue of the device submits to it
+    std::uint32_t queue_family = 0;
+    bool separate_depth_stencil_layouts = true;
+    std::uint32_t max_push_constants_size = 0;
+    bool push_constants_need_fallback = false;
+};
+
+// A Vulkan-backed ID3D12Device (PC ABI, up to ID3D12Device11) on caller-owned Vulkan objects, which must outlive
+// the device and every object it created. Wrap it in rt::d3d12_xs::create_device_proxy for the Xbox ABI.
+HRESULT create_vulkan_device(const VulkanDeviceInfo& info, REFIID riid, void** out);
+
+// The same, on a Vulkan instance and device of its own (destroyed with the D3D12 device). Picks the first discrete
+// GPU with the features above. DEDSEC_VK_VALIDATION=1 enables VK_LAYER_KHRONOS_validation.
+HRESULT create_vulkan_device_standalone(REFIID riid, void** out);
+
+// Tells a device from create_vulkan_device* that `outer` (the Xbox-ABI proxy that owns it) is what its children's
+// GetDevice must return. No reference is taken: the outer object owns the device.
+void set_device_outer(ID3D12Device* device, IUnknown* outer);
+
+// The VkImage behind a texture created by such a device, or VK_NULL_HANDLE. For tests and the swapchain.
+VkImage vulkan_image(ID3D12Resource* resource);
+
+// The maxPushConstantsSize in bytes of the Vulkan physical device behind `device`, or 0 if not a Vulkan device.
+std::uint32_t device_max_push_constants_size(ID3D12Device* device);
+
+// True when `device`'s Vulkan physical device has maxPushConstantsSize < 144 bytes, requiring
+// the uniform-buffer fallback for the 16-byte tail (heap/code base).
+bool device_push_constants_need_fallback(ID3D12Device* device);
+
+// ExecuteCommandLists returns void; this is what the last call on the queue did.
+dedsec::ReplayResult last_execute_result(ID3D12CommandQueue* queue);
+
+// The front/back stencil references last recorded by ID3D12GraphicsCommandList8::OMSetFrontAndBackStencilRef on
+// `list`. The values are kept for the future pipeline path, which is what would apply them. False when `list` is
+// not one of this module's command lists.
+bool front_back_stencil_ref(ID3D12GraphicsCommandList8* list, UINT& front, UINT& back);
+
+inline dedsec::ResourceId resource_id(const ID3D12Resource* resource) {
+    return reinterpret_cast<dedsec::ResourceId>(resource);
+}
+
+}  // namespace rt::d3d12

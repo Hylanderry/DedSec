@@ -56,7 +56,7 @@ O DedSec é um projeto de **recompilação estática** focado em trazer GTA VI d
 
 | Abordagem | Pipeline de Shaders | Saltos | Overhead |
 |---|---|---|---|
-| Leonida (mainline) | RDNA2 → SPIR-V → Vulkan → GPU | 3 | Alto |
+| DedSec (mainline) | RDNA2 → SPIR-V → Vulkan → GPU | 3 | Alto |
 | AnyXboxSeries | RDNA2 → HLSL SM 6.6 → DXIL → DX12 | 2 | Médio |
 | **DedSec** 🇧🇷 | RDNA2 → HLSL SM 6.6 → DXC → DXIL → DX12 Nativo | 2 | **Mínimo** |
 
@@ -130,7 +130,7 @@ ninja
 
 Ou pelo launcher Python:
 ```bash
-python leonida_launcher.py
+python dedsec_launcher.py
 ```
 
 ---
@@ -150,7 +150,7 @@ Veja `CONTRIBUTING.md` para diretrizes. **Nunca anexe arquivos do jogo, assets e
 
 ## 🙏 Créditos e Reconhecimentos
 
-- **Leonida** (ItsNotRexed): base arquitetural e ferramentas de extração de shaders/assets
+- **DedSec** (ItsNotRexed): base arquitetural e ferramentas de extração de shaders/assets
 - **AnyXboxSeries**: referência na abordagem DX12 nativa e benchmarks de cobertura ISA
 - **rpf9-explorer** (breadbbbb): decoders RPF9, texture-pool e AWC
 - **Mesa** (MIT): layout de resource descriptors GFX10

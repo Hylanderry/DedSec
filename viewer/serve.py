@@ -1,0 +1,138 @@
+"""Serve the map viewer on http://127.0.0.1:8765 (local only).
+
+Usage:
+    python -I serve.py [--world DIR] [--port 8765]
+
+`--world` is the folder holding world.json and the .glb chunks (default <work>\\world). It's served at
+/world/ so game-derived files never need to live in this repo. Without it, the viewer shows test terrain.
+"""
+from __future__ import annotations
+
+import argparse
+import functools
+import http.server
+import os
+import urllib.parse
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+_WINDOWS_RESERVED_DEVICES = frozenset({
+    "CON", "PRN", "AUX", "NUL",
+    *(f"COM{i}" for i in range(1, 10)),
+    *(f"LPT{i}" for i in range(1, 10)),
+})
+
+
+def _is_reserved_segment(seg: str) -> bool:
+    stem = seg.rstrip(" .").split(".", 1)[0].upper()
+    if stem in _WINDOWS_RESERVED_DEVICES:
+        return True
+    isreserved = getattr(os.path, "isreserved", None)
+    if callable(isreserved) and isreserved(seg):
+        return True
+    return False
+
+
+# Binding to 127.0.0.1 keeps other machines out, but not other web pages: a page on any site can point its own
+# domain at 127.0.0.1 (DNS rebinding) and read /world/ through this server as same-origin. Its requests still carry
+# that domain in the Host header, so only requests that name this machine are answered.
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "[::1]"})
+
+
+def host_allowed(host: str | None) -> bool:
+    """True when a request's Host header names the loopback address. Browsers always send Host; a request without
+    one comes from a local tool, not a web page, and is allowed."""
+    if host is None:
+        return True
+    host = host.strip().lower()
+    if host.startswith("["):                        # [::1] or [::1]:8765
+        name = host[:host.find("]") + 1] if "]" in host else host
+    else:
+        name = host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+    return name.rstrip(".") in _LOOPBACK_HOSTS
+
+
+def safe_world_path(world_dir: str, req_path: str) -> str | None:
+    """Resolve a /world/... request path safely inside world_dir, or return None."""
+    if not world_dir or not isinstance(req_path, str):
+        return None
+    clean = req_path.split("#", 1)[0].split("?", 1)[0]
+    if not clean.startswith("/world/"):
+        return None
+    rel = urllib.parse.unquote(clean[len("/world/"):])
+    if not rel or "\x00" in rel:
+        return None
+    if rel.startswith(("/", "\\")) or rel.endswith(("/", "\\")):
+        return None
+    norm = rel.replace("\\", "/")
+    parts = norm.split("/")
+    for seg in parts:
+        if not seg or seg in (".", "..") or ":" in seg or _is_reserved_segment(seg):
+            return None
+    if os.path.isabs(rel) or os.path.isabs(norm):
+        return None
+    real_world = os.path.realpath(world_dir)
+    real_target = os.path.realpath(os.path.join(real_world, *parts))
+    try:
+        common = os.path.commonpath([real_world, real_target])
+    except ValueError:
+        return None
+    if os.path.normcase(common) != os.path.normcase(real_world):
+        return None
+    if os.path.normcase(real_target) == os.path.normcase(real_world):
+        return None
+    if os.path.isdir(real_target):
+        return None
+    return real_target
+
+
+class Handler(http.server.SimpleHTTPRequestHandler):
+    world = None
+    extensions_map = {
+        **http.server.SimpleHTTPRequestHandler.extensions_map,
+        ".glb": "model/gltf-binary",
+    }
+
+    def handle(self):
+        try:
+            super().handle()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            # The viewer can cancel a chunk download while its response is being sent.
+            pass
+
+    def send_head(self):
+        if not host_allowed(self.headers.get("Host")):
+            self.send_error(403, "Forbidden: open the viewer at http://127.0.0.1 or http://localhost")
+            return None
+        clean = self.path.split("#", 1)[0].split("?", 1)[0]
+        if self.world and clean.startswith("/world/"):
+            if safe_world_path(self.world, self.path) is None:
+                self.send_error(403, "Forbidden")
+                return None
+        return super().send_head()
+
+    def translate_path(self, path):
+        clean = path.split("#", 1)[0].split("?", 1)[0]
+        if self.world and clean.startswith("/world/"):
+            resolved = safe_world_path(self.world, path)
+            return resolved if resolved is not None else ""
+        return super().translate_path(path)
+
+    def end_headers(self):
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--world", default=r"<work>\world")
+    ap.add_argument("--port", type=int, default=8765)
+    a = ap.parse_args()
+    Handler.world = a.world if os.path.isdir(a.world) else None
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", a.port), functools.partial(Handler, directory=HERE))
+    print(f"viewer: http://127.0.0.1:{a.port}/  world: {Handler.world or '(none: test terrain)'}", flush=True)
+    srv.serve_forever()
+
+
+if __name__ == "__main__":
+    main()

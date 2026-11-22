@@ -1,0 +1,385 @@
+// GPU test for translated texture-sampling pixel shaders, using the translator's runtime contract:
+//   push constants: s0..s31 user data, then the 64-bit heap base (host BDA of the Xbox GPU VA window)
+//   set 0: binding 0 = 2D images[], 1 = samplers[], 2 = descriptor hash table (storage buffer)
+// The test puts a T# (8 dwords) at Xbox VA `tsharp_va` inside the heap, points user SGPR s[ptr_sgpr] at it,
+// registers that T# -> image index 1 and the shader's literal S# -> sampler index 1, binds an 8x8 gradient at
+// index 1 and a magenta fallback at index 0, draws a full-screen triangle and dumps the RGBA32F result.
+//
+//   vk_texture_test <vs.spv> <fs.spv> <out.raw> <ptr_sgpr> <s0> <s1> <s2> <s3>   (S# words as hex)
+//   vk_texture_test cube [out.raw]: ps_cube_sample against two 8x8 cubes, a 12-layer 2D array at binding 3 (the
+//   translator's view of a cube array); every pixel must be the texel a cube sample of its direction reads.
+//   VKT_HEAP_MB=<n>: size of the heap in MiB (default 64 KiB)
+#define VK_NO_PROTOTYPES
+#include "vulkan_loader.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <fstream>
+#include <vector>
+
+static PFN_vkGetInstanceProcAddr gipa;
+#define CHECK(x)                                                                     \
+    do {                                                                             \
+        VkResult r_ = (x);                                                           \
+        if (r_ != VK_SUCCESS) {                                                      \
+            std::fprintf(stderr, "FAILED %s -> %d (line %d)\n", #x, r_, __LINE__);   \
+            return 1;                                                                \
+        }                                                                            \
+    } while (0)
+
+static std::vector<uint32_t> read_spv(const char* p) {
+    std::ifstream f(p, std::ios::binary);
+    if (!f.good()) return {};
+    std::vector<char> b((std::istreambuf_iterator<char>(f)), {});
+    std::vector<uint32_t> w(b.size() / 4);
+    std::memcpy(w.data(), b.data(), w.size() * 4);
+    return w;
+}
+
+#include "../src/descriptor_table.h"
+
+int main(int argc, char** argv) {
+    const uint32_t W = 64, H = 64, TW = 8;
+    std::string vs_path, fs_path, out_path;
+    int ptr_sgpr = 0;
+    const bool cube = argc >= 2 && !std::strcmp(argv[1], "cube");
+    bool autonomous = false;
+    uint32_t ssharp[8] = {0x92, 0xc00000, 0x14500000, 0,
+                          0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu};
+    if (argc >= 9) {
+        vs_path = argv[1];
+        fs_path = argv[2];
+        out_path = argv[3];
+        ptr_sgpr = std::atoi(argv[4]);
+        for (int i = 0; i < 4; ++i) ssharp[i] = (uint32_t)strtoul(argv[5 + i], 0, 16);
+    } else if (argc <= 2 || (cube && argc == 3)) {
+        // Autonomous mode using synthetic hand-written shaders (no game files required)
+        autonomous = true;
+        auto find_spv = [](const char* name) -> std::string {
+            const char* candidates[] = {
+                "runtime/build/shaders/spirv/",
+                "runtime/test/shaders/spirv/",
+                "build/shaders/spirv/",
+                "shaders/spirv/",
+                ""
+            };
+            for (const char* prefix : candidates) {
+                std::string p = std::string(prefix) + name;
+                std::ifstream f(p, std::ios::binary);
+                if (f.good()) return p;
+            }
+            return std::string("runtime/build/shaders/spirv/") + name;
+        };
+        vs_path = find_spv("vs_ids.spv");
+        fs_path = find_spv(cube ? "ps_cube_sample.spv" : "ps_texture_sample.spv");
+        const int out_arg = cube ? 2 : 1;
+        out_path = argc > out_arg ? argv[out_arg] : "runtime/build/vk_texture_test_out.raw";
+        ptr_sgpr = 0;
+    } else {
+        std::fprintf(stderr, "usage: vk_texture_test [cube] [out] | vs fs out ptr_sgpr s0 s1 s2 s3\n");
+        return 2;
+    }
+    uint32_t tsharp[8] = {0x11111111, 0x22222222, 0x33333333, 0x44444444,
+                          0x55555555, 0x66666666, 0x77777777, 0x88888888};   // any 8 dwords; only the key matters
+    const uint32_t tsharp_va = 256;
+
+    gipa = load_vulkan();
+    if (!gipa) { std::fprintf(stderr, "the Vulkan loader was not found\n"); return 1; }
+    VkInstance inst = VK_NULL_HANDLE;
+#define LI(n) auto n = reinterpret_cast<PFN_##n>(gipa(inst, #n))
+    LI(vkCreateInstance);
+    VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO}; app.apiVersion = VK_API_VERSION_1_2;
+    VkInstanceCreateInfo ici{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO}; ici.pApplicationInfo = &app;
+    CHECK(vkCreateInstance(&ici, nullptr, &inst));
+    LI(vkEnumeratePhysicalDevices); LI(vkGetPhysicalDeviceProperties); LI(vkGetPhysicalDeviceQueueFamilyProperties);
+    LI(vkGetPhysicalDeviceMemoryProperties); LI(vkCreateDevice); LI(vkGetDeviceProcAddr);
+    uint32_t n = 0; vkEnumeratePhysicalDevices(inst, &n, nullptr);
+    std::vector<VkPhysicalDevice> pds(n); vkEnumeratePhysicalDevices(inst, &n, pds.data());
+    VkPhysicalDevice pd = pds[0];
+    for (auto d : pds) { VkPhysicalDeviceProperties p; vkGetPhysicalDeviceProperties(d, &p);
+                         if (p.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) pd = d; }
+    uint32_t qn = 0; vkGetPhysicalDeviceQueueFamilyProperties(pd, &qn, nullptr);
+    std::vector<VkQueueFamilyProperties> qf(qn); vkGetPhysicalDeviceQueueFamilyProperties(pd, &qn, qf.data());
+    uint32_t qi = 0; while (!(qf[qi].queueFlags & VK_QUEUE_GRAPHICS_BIT)) qi++;
+    float prio = 1;
+    VkDeviceQueueCreateInfo qci{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
+    qci.queueFamilyIndex = qi; qci.queueCount = 1; qci.pQueuePriorities = &prio;
+    VkPhysicalDeviceVulkan12Features f12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
+    f12.bufferDeviceAddress = VK_TRUE; f12.runtimeDescriptorArray = VK_TRUE; f12.descriptorIndexing = VK_TRUE;
+    VkPhysicalDeviceFeatures2 f2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2}; f2.pNext = &f12;
+    f2.features.shaderInt64 = VK_TRUE;
+    VkDeviceCreateInfo dci{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
+    dci.pNext = &f2; dci.queueCreateInfoCount = 1; dci.pQueueCreateInfos = &qci;
+    VkDevice dev; CHECK(vkCreateDevice(pd, &dci, nullptr, &dev));
+#define LD(n) auto n = reinterpret_cast<PFN_##n>(vkGetDeviceProcAddr(dev, #n))
+    LD(vkGetDeviceQueue); LD(vkCreateImage); LD(vkGetImageMemoryRequirements); LD(vkAllocateMemory);
+    LD(vkBindImageMemory); LD(vkCreateImageView); LD(vkCreateRenderPass); LD(vkCreateFramebuffer);
+    LD(vkCreateShaderModule); LD(vkCreatePipelineLayout); LD(vkCreateGraphicsPipelines); LD(vkCreateCommandPool);
+    LD(vkAllocateCommandBuffers); LD(vkBeginCommandBuffer); LD(vkCmdBeginRenderPass); LD(vkCmdBindPipeline);
+    LD(vkCmdDraw); LD(vkCmdEndRenderPass); LD(vkCmdCopyImageToBuffer); LD(vkCmdCopyBufferToImage);
+    LD(vkEndCommandBuffer); LD(vkQueueSubmit); LD(vkQueueWaitIdle); LD(vkCreateBuffer);
+    LD(vkGetBufferMemoryRequirements); LD(vkBindBufferMemory); LD(vkMapMemory); LD(vkGetBufferDeviceAddress);
+    LD(vkCreateSampler); LD(vkCreateDescriptorSetLayout); LD(vkCreateDescriptorPool); LD(vkAllocateDescriptorSets);
+    LD(vkUpdateDescriptorSets); LD(vkCmdBindDescriptorSets); LD(vkCmdPushConstants); LD(vkCmdPipelineBarrier);
+    VkQueue q; vkGetDeviceQueue(dev, qi, 0, &q);
+    VkPhysicalDeviceMemoryProperties mp; vkGetPhysicalDeviceMemoryProperties(pd, &mp);
+    auto memtype = [&](uint32_t bits, VkMemoryPropertyFlags want) {
+        for (uint32_t i = 0; i < mp.memoryTypeCount; i++)
+            if ((bits & (1u << i)) && (mp.memoryTypes[i].propertyFlags & want) == want) return i;
+        return 0u;
+    };
+    auto make_buffer = [&](VkDeviceSize size, VkBufferUsageFlags usage, VkBuffer* b, VkDeviceMemory* m, void** map) {
+        VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO}; bi.size = size; bi.usage = usage;
+        VkResult r = vkCreateBuffer(dev, &bi, nullptr, b); if (r) return r;
+        VkMemoryRequirements mr; vkGetBufferMemoryRequirements(dev, *b, &mr);
+        VkMemoryAllocateFlagsInfo fi{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO};
+        fi.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+        VkMemoryAllocateInfo ai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO}; ai.pNext = &fi; ai.allocationSize = mr.size;
+        ai.memoryTypeIndex = memtype(mr.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        r = vkAllocateMemory(dev, &ai, nullptr, m); if (r) return r;
+        r = vkBindBufferMemory(dev, *b, *m, 0); if (r) return r;
+        return vkMapMemory(dev, *m, 0, size, 0, map);
+    };
+    // Heap (the Xbox GPU VA window) with the T# at tsharp_va.
+    VkBuffer heap; VkDeviceMemory heapm; void* heapp;
+    // 64 KiB of zeros unless VKT_HEAP_MB says otherwise. Buffer loads are not bounds-checked against the V#, so a
+    // shader that indexes with anything but the zeros it finds here reads past the end: a bigger heap keeps such
+    // reads inside defined memory.
+    const char* heap_mb = std::getenv("VKT_HEAP_MB");
+    const VkDeviceSize heap_bytes = heap_mb && std::atoi(heap_mb) > 0 ? VkDeviceSize(std::atoi(heap_mb)) << 20 : 65536;
+    CHECK(make_buffer(heap_bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, &heap, &heapm, &heapp));
+    std::memset(heapp, 0, size_t(heap_bytes));
+    std::memcpy(static_cast<char*>(heapp) + tsharp_va, tsharp, 32);
+    VkBufferDeviceAddressInfo bdai{VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO}; bdai.buffer = heap;
+    VkDeviceAddress heap_base = vkGetBufferDeviceAddress(dev, &bdai);
+    // Descriptor hash table: 16 slots.
+    dedsec::DescriptorTable desc_table(16);
+    desc_table.insert(tsharp, 1);
+    desc_table.insert(ssharp, 1);
+    const auto table = desc_table.build_gpu_buffer(true);
+    VkBuffer tb; VkDeviceMemory tbm; void* tbp;
+    CHECK(make_buffer(table.size() * 4, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &tb, &tbm, &tbp));
+    std::memcpy(tbp, table.data(), table.size() * 4);
+    // Textures: index 0 = 1x1 magenta fallback, index 1 = 8x8 gradient (r = x/8, g = y/8, b = 0.5, a = 1).
+    // Binding 3 (2D arrays) gets the same fallback and two 8x8 cubes as 12 layers: layer l = (x/8, y/8, 20l/255, 1).
+    auto make_tex = [&](uint32_t w, uint32_t h, uint32_t layers, VkImageViewType type, VkImage* img, VkImageView* view) {
+        VkImageCreateInfo ii{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+        ii.imageType = VK_IMAGE_TYPE_2D; ii.format = VK_FORMAT_R8G8B8A8_UNORM; ii.extent = {w, h, 1};
+        ii.mipLevels = 1; ii.arrayLayers = layers; ii.samples = VK_SAMPLE_COUNT_1_BIT; ii.tiling = VK_IMAGE_TILING_OPTIMAL;
+        ii.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        VkResult r = vkCreateImage(dev, &ii, nullptr, img); if (r) return r;
+        VkMemoryRequirements mr; vkGetImageMemoryRequirements(dev, *img, &mr);
+        VkMemoryAllocateInfo ai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO}; ai.allocationSize = mr.size;
+        ai.memoryTypeIndex = memtype(mr.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        VkDeviceMemory m; r = vkAllocateMemory(dev, &ai, nullptr, &m); if (r) return r;
+        vkBindImageMemory(dev, *img, m, 0);
+        VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+        vi.image = *img; vi.viewType = type; vi.format = ii.format;
+        vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, layers};
+        return vkCreateImageView(dev, &vi, nullptr, view);
+    };
+    const uint32_t CUBE_LAYERS = 12;
+    std::vector<uint32_t> magenta{0xFFFF00FFu}, grad(TW * TW), cubes(CUBE_LAYERS * TW * TW);
+    for (uint32_t y = 0; y < TW; y++)
+        for (uint32_t x = 0; x < TW; x++) {
+            grad[y * TW + x] = (x * 32u) | ((y * 32u) << 8) | (128u << 16) | (255u << 24);
+            for (uint32_t l = 0; l < CUBE_LAYERS; l++)
+                cubes[(l * TW + y) * TW + x] = (x * 32u) | ((y * 32u) << 8) | ((l * 20u) << 16) | (255u << 24);
+        }
+    VkImage timg[4]; VkImageView tview[4];
+    CHECK(make_tex(1, 1, 1, VK_IMAGE_VIEW_TYPE_2D, &timg[0], &tview[0]));
+    CHECK(make_tex(TW, TW, 1, VK_IMAGE_VIEW_TYPE_2D, &timg[1], &tview[1]));
+    CHECK(make_tex(1, 1, 1, VK_IMAGE_VIEW_TYPE_2D_ARRAY, &timg[2], &tview[2]));
+    CHECK(make_tex(TW, TW, CUBE_LAYERS, VK_IMAGE_VIEW_TYPE_2D_ARRAY, &timg[3], &tview[3]));
+    VkBuffer up; VkDeviceMemory upm; void* upp;
+    CHECK(make_buffer(4096, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &up, &upm, &upp));
+    std::memcpy(upp, magenta.data(), 4);
+    std::memcpy(static_cast<char*>(upp) + 256, grad.data(), grad.size() * 4);
+    std::memcpy(static_cast<char*>(upp) + 1024, cubes.data(), cubes.size() * 4);
+    VkSamplerCreateInfo sci{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+    sci.magFilter = sci.minFilter = VK_FILTER_NEAREST;
+    sci.addressModeU = sci.addressModeV = sci.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    VkSampler smp[2]; CHECK(vkCreateSampler(dev, &sci, nullptr, &smp[0])); CHECK(vkCreateSampler(dev, &sci, nullptr, &smp[1]));
+    // Render target.
+    const VkFormat fmt = VK_FORMAT_R32G32B32A32_SFLOAT;
+    VkImage rt; VkImageView rtv;
+    {
+        VkImageCreateInfo ii{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+        ii.imageType = VK_IMAGE_TYPE_2D; ii.format = fmt; ii.extent = {W, H, 1}; ii.mipLevels = 1; ii.arrayLayers = 1;
+        ii.samples = VK_SAMPLE_COUNT_1_BIT; ii.tiling = VK_IMAGE_TILING_OPTIMAL;
+        ii.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        CHECK(vkCreateImage(dev, &ii, nullptr, &rt));
+        VkMemoryRequirements mr; vkGetImageMemoryRequirements(dev, rt, &mr);
+        VkMemoryAllocateInfo ai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO}; ai.allocationSize = mr.size;
+        ai.memoryTypeIndex = memtype(mr.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        VkDeviceMemory m; CHECK(vkAllocateMemory(dev, &ai, nullptr, &m)); vkBindImageMemory(dev, rt, m, 0);
+        VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+        vi.image = rt; vi.viewType = VK_IMAGE_VIEW_TYPE_2D; vi.format = fmt; vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        CHECK(vkCreateImageView(dev, &vi, nullptr, &rtv));
+    }
+    VkAttachmentDescription ad{}; ad.format = fmt; ad.samples = VK_SAMPLE_COUNT_1_BIT;
+    ad.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; ad.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    ad.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; ad.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    ad.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; ad.finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    VkAttachmentReference ar{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+    VkSubpassDescription sd{}; sd.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS; sd.colorAttachmentCount = 1; sd.pColorAttachments = &ar;
+    VkRenderPassCreateInfo rpi{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
+    rpi.attachmentCount = 1; rpi.pAttachments = &ad; rpi.subpassCount = 1; rpi.pSubpasses = &sd;
+    VkRenderPass rp; CHECK(vkCreateRenderPass(dev, &rpi, nullptr, &rp));
+    VkFramebufferCreateInfo fbi{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
+    fbi.renderPass = rp; fbi.attachmentCount = 1; fbi.pAttachments = &rtv; fbi.width = W; fbi.height = H; fbi.layers = 1;
+    VkFramebuffer fb; CHECK(vkCreateFramebuffer(dev, &fbi, nullptr, &fb));
+    // Descriptor set: binding 0 images[2], 1 samplers[2], 2 hash table, 3 2D-array images[2].
+    VkDescriptorSetLayoutBinding b[4]{};
+    b[0] = {0, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 2, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
+    b[1] = {1, VK_DESCRIPTOR_TYPE_SAMPLER, 2, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
+    b[2] = {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
+    b[3] = {3, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 2, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
+    VkDescriptorSetLayoutCreateInfo dli{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO}; dli.bindingCount = 4; dli.pBindings = b;
+    VkDescriptorSetLayout dsl; CHECK(vkCreateDescriptorSetLayout(dev, &dli, nullptr, &dsl));
+    VkDescriptorPoolSize ps[3]{{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 4}, {VK_DESCRIPTOR_TYPE_SAMPLER, 2}, {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1}};
+    VkDescriptorPoolCreateInfo dpi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO}; dpi.maxSets = 1; dpi.poolSizeCount = 3; dpi.pPoolSizes = ps;
+    VkDescriptorPool dp; CHECK(vkCreateDescriptorPool(dev, &dpi, nullptr, &dp));
+    VkDescriptorSetAllocateInfo dai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO}; dai.descriptorPool = dp; dai.descriptorSetCount = 1; dai.pSetLayouts = &dsl;
+    VkDescriptorSet ds; CHECK(vkAllocateDescriptorSets(dev, &dai, &ds));
+    VkDescriptorImageInfo ii2[2]{{VK_NULL_HANDLE, tview[0], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+                                 {VK_NULL_HANDLE, tview[1], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}};
+    VkDescriptorImageInfo ai2[2]{{VK_NULL_HANDLE, tview[2], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+                                 {VK_NULL_HANDLE, tview[3], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}};
+    VkDescriptorImageInfo si2[2]{{smp[0]}, {smp[1]}};
+    VkDescriptorBufferInfo tbi{tb, 0, VK_WHOLE_SIZE};
+    VkWriteDescriptorSet wr[4]{};
+    for (auto& w : wr) { w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET; w.dstSet = ds; }
+    wr[0].dstBinding = 0; wr[0].descriptorCount = 2; wr[0].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE; wr[0].pImageInfo = ii2;
+    wr[1].dstBinding = 1; wr[1].descriptorCount = 2; wr[1].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER; wr[1].pImageInfo = si2;
+    wr[2].dstBinding = 2; wr[2].descriptorCount = 1; wr[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; wr[2].pBufferInfo = &tbi;
+    wr[3].dstBinding = 3; wr[3].descriptorCount = 2; wr[3].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE; wr[3].pImageInfo = ai2;
+    vkUpdateDescriptorSets(dev, 4, wr, 0, nullptr);
+    // Pipeline.
+    auto module = [&](const char* p, VkShaderModule* m) {
+        auto code = read_spv(p);
+        if (code.empty()) {
+            std::fprintf(stderr, "failed to read shader module: %s\n", p);
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+        VkShaderModuleCreateInfo smi{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO}; smi.codeSize = code.size() * 4; smi.pCode = code.data();
+        return vkCreateShaderModule(dev, &smi, nullptr, m);
+    };
+    VkShaderModule vs, fs; CHECK(module(vs_path.c_str(), &vs)); CHECK(module(fs_path.c_str(), &fs));
+    VkPipelineShaderStageCreateInfo st[2]{{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO}, {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO}};
+    st[0].stage = VK_SHADER_STAGE_VERTEX_BIT; st[0].module = vs; st[0].pName = "main";
+    st[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT; st[1].module = fs; st[1].pName = "main";
+    VkPushConstantRange pcr{VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT, 0, 144};
+    VkPipelineLayoutCreateInfo pli{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+    pli.setLayoutCount = 1; pli.pSetLayouts = &dsl; pli.pushConstantRangeCount = 1; pli.pPushConstantRanges = &pcr;
+    VkPipelineLayout pl; CHECK(vkCreatePipelineLayout(dev, &pli, nullptr, &pl));
+    VkPipelineVertexInputStateCreateInfo vin{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+    VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO}; ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    VkViewport vp{0, 0, float(W), float(H), 0, 1}; VkRect2D sc{{0, 0}, {W, H}};
+    VkPipelineViewportStateCreateInfo vps{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+    vps.viewportCount = 1; vps.pViewports = &vp; vps.scissorCount = 1; vps.pScissors = &sc;
+    VkPipelineRasterizationStateCreateInfo rs{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO}; rs.cullMode = VK_CULL_MODE_NONE; rs.lineWidth = 1;
+    VkPipelineMultisampleStateCreateInfo ms{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO}; ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    VkPipelineColorBlendAttachmentState cba{}; cba.colorWriteMask = 0xF;
+    VkPipelineColorBlendStateCreateInfo cb{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO}; cb.attachmentCount = 1; cb.pAttachments = &cba;
+    VkGraphicsPipelineCreateInfo gpi{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+    gpi.stageCount = 2; gpi.pStages = st; gpi.pVertexInputState = &vin; gpi.pInputAssemblyState = &ia; gpi.pViewportState = &vps;
+    gpi.pRasterizationState = &rs; gpi.pMultisampleState = &ms; gpi.pColorBlendState = &cb; gpi.layout = pl; gpi.renderPass = rp;
+    VkPipeline pipe; CHECK(vkCreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &gpi, nullptr, &pipe));
+    VkBuffer rb; VkDeviceMemory rbm; void* rbp;
+    CHECK(make_buffer(VkDeviceSize(W) * H * 16, VK_BUFFER_USAGE_TRANSFER_DST_BIT, &rb, &rbm, &rbp));
+    // Commands: upload textures, draw, read back.
+    VkCommandPoolCreateInfo cpi{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO}; cpi.queueFamilyIndex = qi;
+    VkCommandPool pool; CHECK(vkCreateCommandPool(dev, &cpi, nullptr, &pool));
+    VkCommandBufferAllocateInfo cai{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO}; cai.commandPool = pool; cai.commandBufferCount = 1;
+    VkCommandBuffer cmd; CHECK(vkAllocateCommandBuffers(dev, &cai, &cmd));
+    VkCommandBufferBeginInfo cbi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO}; CHECK(vkBeginCommandBuffer(cmd, &cbi));
+    const VkDeviceSize up_offset[4] = {0, 256, 0, 1024};
+    const uint32_t up_size[4] = {1, TW, 1, TW}, up_layers[4] = {1, 1, 1, CUBE_LAYERS};
+    for (int t = 0; t < 4; t++) {
+        VkImageMemoryBarrier ib{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+        ib.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED; ib.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL; ib.image = timg[t];
+        ib.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, up_layers[t]}; ib.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        ib.srcQueueFamilyIndex = ib.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &ib);
+        VkBufferImageCopy c{}; c.bufferOffset = up_offset[t]; c.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, up_layers[t]};
+        c.imageExtent = {up_size[t], up_size[t], 1};
+        vkCmdCopyBufferToImage(cmd, up, timg[t], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &c);
+        ib.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL; ib.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        ib.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; ib.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &ib);
+    }
+    VkClearValue clear{}; for (int i = 0; i < 4; i++) clear.color.float32[i] = -1;
+    VkRenderPassBeginInfo rbi{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
+    rbi.renderPass = rp; rbi.framebuffer = fb; rbi.renderArea = sc; rbi.clearValueCount = 1; rbi.pClearValues = &clear;
+    vkCmdBeginRenderPass(cmd, &rbi, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pl, 0, 1, &ds, 0, nullptr);
+    uint32_t pc[36] = {};
+    pc[ptr_sgpr] = tsharp_va;               // pointer to the T# (low dword; the shader forces the high dword to 0)
+    pc[32] = uint32_t(heap_base); pc[33] = uint32_t(heap_base >> 32);
+    vkCmdPushConstants(cmd, pl, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc), pc);
+    vkCmdDraw(cmd, 3, 1, 0, 0);
+    vkCmdEndRenderPass(cmd);
+    VkBufferImageCopy rc{}; rc.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}; rc.imageExtent = {W, H, 1};
+    vkCmdCopyImageToBuffer(cmd, rt, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, rb, 1, &rc);
+    CHECK(vkEndCommandBuffer(cmd));
+    VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO}; si.commandBufferCount = 1; si.pCommandBuffers = &cmd;
+    CHECK(vkQueueSubmit(q, 1, &si, VK_NULL_HANDLE)); CHECK(vkQueueWaitIdle(q));
+    std::ofstream(out_path, std::ios::binary).write(static_cast<const char*>(rbp), std::streamsize(W) * H * 16);
+    std::fprintf(stderr, "ok -> %s (heap base 0x%llx)\n", out_path.c_str(), (unsigned long long)heap_base);
+    if (autonomous && cube) {
+        // Expected: the texel a cube sample of the pixel centre's direction reads from the second cube (layer 6 + face).
+        // Pixels on a face edge are skipped; the face chosen there depends on rounding.
+        const float* pixels = static_cast<const float*>(rbp);
+        int checked = 0, wrong = 0;
+        for (uint32_t py = 0; py < H; py++)
+            for (uint32_t px = 0; px < W; px++) {
+                const float x = 2 * (px + 0.5f) / W - 1, y = 2 * (py + 0.5f) / H - 1, z = -0.6f;
+                const float ax = std::fabs(x), ay = std::fabs(y), az = std::fabs(z);
+                if (std::fabs(ax - ay) < 1e-3f || std::fabs(ax - az) < 1e-3f || std::fabs(ay - az) < 1e-3f) continue;
+                int face;
+                float sc, tc, ma;
+                if (az >= ax && az >= ay) { face = z < 0 ? 5 : 4; sc = z < 0 ? -x : x; tc = -y; ma = az; }
+                else if (ay >= ax) { face = y < 0 ? 3 : 2; sc = x; tc = y < 0 ? -z : z; ma = ay; }
+                else { face = x < 0 ? 1 : 0; sc = x < 0 ? z : -z; tc = -y; ma = ax; }
+                const float s = TW * 0.5f * (sc / ma + 1), t = TW * 0.5f * (tc / ma + 1);   // in texels
+                const float* p = pixels + (py * W + px) * 4;
+                bool ok = false;
+                for (float ds : {-1e-3f, 1e-3f})
+                    for (float dt : {-1e-3f, 1e-3f}) {
+                        const int tx = std::min(int(TW) - 1, int(s + ds)), ty = std::min(int(TW) - 1, int(t + dt));
+                        ok |= std::fabs(p[0] - tx * 32 / 255.f) < 1e-3f && std::fabs(p[1] - ty * 32 / 255.f) < 1e-3f &&
+                              std::fabs(p[2] - (6 + face) * 20 / 255.f) < 1e-3f;
+                    }
+                checked++;
+                wrong += !ok;
+            }
+        if (wrong) {
+            std::fprintf(stderr, "vk_texture_test cube: %d of %d pixels FAILED\n", wrong, checked);
+            return 1;
+        }
+        std::printf("vk_texture_test cube: PASSED (%d pixels, each the texel a cube sample of its direction reads)\n",
+                    checked);
+    }
+    if (autonomous && !cube) {
+        const float* pixels = static_cast<const float*>(rbp);
+        // Sample center pixel (32, 32)
+        int idx = (32 * W + 32) * 4;
+        float r = pixels[idx + 0];
+        float g = pixels[idx + 1];
+        float b = pixels[idx + 2];
+        float a = pixels[idx + 3];
+        if (std::abs(b - (128.0f / 255.0f)) > 0.05f || std::abs(a - 1.0f) > 0.05f) {
+            std::fprintf(stderr, "vk_texture_test: pixel check FAILED at (32,32): rgba=(%f, %f, %f, %f), expected gradient sample (~0.5, ~0.5, 0.5, 1.0)\n",
+                         r, g, b, a);
+            return 1;
+        }
+        std::printf("vk_texture_test: PASSED (verified center pixel rgba=(%.3f, %.3f, %.3f, %.3f) from gradient texture via descriptor table)\n",
+                    r, g, b, a);
+    }
+    return 0;
+}

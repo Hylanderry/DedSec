@@ -1,36 +1,36 @@
 cmake_minimum_required(VERSION 3.24)
-project(gta6rt LANGUAGES CXX)
+project(dedsec_rt LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
-  message(FATAL_ERROR "gta6rt must be built for x64 (run from an x64 Native Tools prompt or vcvars64.bat)")
+  message(FATAL_ERROR "dedsec_rt must be built for x64 (run from an x64 Native Tools prompt or vcvars64.bat)")
 endif()
 
 if(WIN32)
   # Root-signature flag fix, shared by the d3d12_xs shim and its tests.
-  add_library(gta6rt_d3d12_xs_rootsig STATIC
+  add_library(dedsec_rt_d3d12_xs_rootsig STATIC
     shims/d3d12_xs_rootsig.cpp
   )
-  target_include_directories(gta6rt_d3d12_xs_rootsig PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/shims)
-  target_compile_definitions(gta6rt_d3d12_xs_rootsig PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
-  target_compile_options(gta6rt_d3d12_xs_rootsig PRIVATE /W4 /permissive- /utf-8)
+  target_include_directories(dedsec_rt_d3d12_xs_rootsig PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/shims)
+  target_compile_definitions(dedsec_rt_d3d12_xs_rootsig PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(dedsec_rt_d3d12_xs_rootsig PRIVATE /W4 /permissive- /utf-8)
 
   # Portable root-signature model + packer to user SGPRs (no d3d12.h, no windows.h).
-  add_library(gta6rt_root_signature STATIC
+  add_library(dedsec_rt_root_signature STATIC
     src/root_signature.cpp
   )
-  target_include_directories(gta6rt_root_signature PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
-  target_compile_definitions(gta6rt_root_signature PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
-  target_compile_options(gta6rt_root_signature PRIVATE /W4 /permissive- /utf-8)
+  target_include_directories(dedsec_rt_root_signature PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_compile_definitions(dedsec_rt_root_signature PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(dedsec_rt_root_signature PRIVATE /W4 /permissive- /utf-8)
 
   # Portable contract test: model, packer, canonical codec and RTS0 hypothesis.
   # Needs neither d3d12.lib nor the game; runs on Windows CI like the rest here.
   add_executable(root_signature_test
     test/root_signature_test.cpp
   )
-  target_link_libraries(root_signature_test PRIVATE gta6rt_root_signature)
+  target_link_libraries(root_signature_test PRIVATE dedsec_rt_root_signature)
   target_compile_definitions(root_signature_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
   target_compile_options(root_signature_test PRIVATE /W4 /permissive- /utf-8)
   target_link_options(root_signature_test PRIVATE /OPT:NOREF)
@@ -38,18 +38,18 @@ if(WIN32)
   # XTaskQueue/XAsync from microsoft/libHttpClient (MIT), vendored in third_party/xtaskqueue; shims/xtaskqueue/pch.h
   # stands in for libHttpClient's pch.h so only the task queue builds. Used by the xgameruntime shim.
   set(XTASKQUEUE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/xtaskqueue)
-  add_library(gta6rt_xtaskqueue STATIC
+  add_library(dedsec_rt_xtaskqueue STATIC
     ${XTASKQUEUE_DIR}/Source/Task/TaskQueue.cpp
     ${XTASKQUEUE_DIR}/Source/Task/AsyncLib.cpp
     ${XTASKQUEUE_DIR}/Source/Task/ThreadPool_win32.cpp
     ${XTASKQUEUE_DIR}/Source/Task/WaitTimer_win32.cpp
   )
-  target_include_directories(gta6rt_xtaskqueue
+  target_include_directories(dedsec_rt_xtaskqueue
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/shims/xtaskqueue ${XTASKQUEUE_DIR}/Source/Task ${XTASKQUEUE_DIR}/Source/Common
     PUBLIC ${XTASKQUEUE_DIR}/Include)
-  target_compile_definitions(gta6rt_xtaskqueue PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
-  target_compile_options(gta6rt_xtaskqueue PRIVATE /utf-8)  # third-party code: its own warning level
-  target_link_libraries(gta6rt_xtaskqueue PUBLIC ole32)
+  target_compile_definitions(dedsec_rt_xtaskqueue PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(dedsec_rt_xtaskqueue PRIVATE /utf-8)  # third-party code: its own warning level
+  target_link_libraries(dedsec_rt_xtaskqueue PUBLIC ole32)
 
   # DedSec GPU Tier Detection & Scalable Presets
   add_library(dedsec_gpu_tier STATIC
@@ -184,7 +184,7 @@ if(WIN32)
   target_compile_options(xbox_input_adapter_test PRIVATE /W4 /permissive- /utf-8)
   add_test(NAME xbox_input_adapter COMMAND xbox_input_adapter_test)
 
-  add_executable(gta6rt
+  add_executable(dedsec_rt
     src/main.cpp
     src/pe_loader.cpp
     shims/registry.cpp
@@ -193,11 +193,11 @@ if(WIN32)
     shims/d3d12_xs_device.cpp
     shims/xgameruntime.cpp
   )
-  target_compile_definitions(gta6rt PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
-  target_compile_options(gta6rt PRIVATE /W4 /permissive- /utf-8)
+  target_compile_definitions(dedsec_rt PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
+  target_compile_options(dedsec_rt PRIVATE /W4 /permissive- /utf-8)
   # Static shim tables register themselves at startup; keep the linker from dropping their objects.
-  target_link_options(gta6rt PRIVATE /OPT:NOREF)
-  target_link_libraries(gta6rt PRIVATE gta6rt_d3d12_xs_rootsig gta6rt_xtaskqueue dedsec_fsr3 dedsec_gpu_tier dedsec_shader_cache dedsec_pso_warmup dedsec_async_compute dedsec_occlusion_cull dedsec_vrs dedsec_rdna2_translator dedsec_dxc_compiler dedsec_rdna2_mimg dedsec_xbox_input psapi)
+  target_link_options(dedsec_rt PRIVATE /OPT:NOREF)
+  target_link_libraries(dedsec_rt PRIVATE dedsec_rt_d3d12_xs_rootsig dedsec_rt_xtaskqueue dedsec_fsr3 dedsec_gpu_tier dedsec_shader_cache dedsec_pso_warmup dedsec_async_compute dedsec_occlusion_cull dedsec_vrs dedsec_rdna2_translator dedsec_dxc_compiler dedsec_rdna2_mimg dedsec_xbox_input psapi)
 
   # Root-signature forwarding test: needs a real PC d3d12.lib to serialize the synthetic descriptors.
   # find_library searches %LIB% (a Developer Prompt), not the Windows SDK the Visual Studio generator links
@@ -220,7 +220,7 @@ if(WIN32)
       shims/d3d12_xs.cpp
       shims/d3d12_xs_device.cpp
     )
-    target_link_libraries(root_sig_test PRIVATE gta6rt_d3d12_xs_rootsig ${D3D12_LIBRARY})
+    target_link_libraries(root_sig_test PRIVATE dedsec_rt_d3d12_xs_rootsig ${D3D12_LIBRARY})
     target_compile_definitions(root_sig_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
     target_compile_options(root_sig_test PRIVATE /W4 /permissive- /utf-8)
     target_link_options(root_sig_test PRIVATE /OPT:NOREF)
@@ -231,7 +231,7 @@ if(WIN32)
     add_executable(root_signature_oracle_test
       test/root_signature_oracle_test.cpp
     )
-    target_link_libraries(root_signature_oracle_test PRIVATE gta6rt_root_signature ${D3D12_LIBRARY})
+    target_link_libraries(root_signature_oracle_test PRIVATE dedsec_rt_root_signature ${D3D12_LIBRARY})
     target_compile_definitions(root_signature_oracle_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
     target_compile_options(root_signature_oracle_test PRIVATE /W4 /permissive- /utf-8)
     target_link_options(root_signature_oracle_test PRIVATE /OPT:NOREF)
@@ -244,7 +244,7 @@ if(WIN32)
         shims/d3d12_xs.cpp
         shims/d3d12_xs_device.cpp
       )
-      target_link_libraries(device_proxy_test PRIVATE gta6rt_d3d12_xs_rootsig ${D3D12_LIBRARY} ${DXGI_LIBRARY})
+      target_link_libraries(device_proxy_test PRIVATE dedsec_rt_d3d12_xs_rootsig ${D3D12_LIBRARY} ${DXGI_LIBRARY})
       target_compile_definitions(device_proxy_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
       target_compile_options(device_proxy_test PRIVATE /W4 /permissive- /utf-8)
       target_link_options(device_proxy_test PRIVATE /OPT:NOREF)
@@ -256,7 +256,7 @@ if(WIN32)
   endif()
 
   # xmem shim ABI test: resolves the registered xmem.dll exports itself, so xmem.cpp and registry.cpp are compiled
-  # into this executable instead of reusing gta6rt's objects (which would duplicate their symbols).
+  # into this executable instead of reusing dedsec_rt's objects (which would duplicate their symbols).
   add_executable(xmem_test
     test/xmem_test.cpp
     shims/xmem.cpp
@@ -279,10 +279,10 @@ if(WIN32)
   target_compile_definitions(xgameruntime_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
   target_compile_options(xgameruntime_test PRIVATE /W4 /permissive- /utf-8)
   target_link_options(xgameruntime_test PRIVATE /OPT:NOREF)
-  target_link_libraries(xgameruntime_test PRIVATE gta6rt_xtaskqueue)
+  target_link_libraries(xgameruntime_test PRIVATE dedsec_rt_xtaskqueue)
 
 else()
-  message(STATUS "gta6rt requires Windows; only Vulkan tools are available on Linux")
+  message(STATUS "dedsec_rt requires Windows; only Vulkan tools are available on Linux")
 endif()
 
 include(CTest)
@@ -324,8 +324,8 @@ if(BUILD_TESTING)
     )
 
     # pe_loader.cpp needs the shim registry for shims::find/make_unimplemented_thunk. The xmem and d3d12_xs tables
-    # are linked too so the optional LEONIDA_GAME_DIR run classifies the shipped modules' imports exactly like
-    # gta6rt does (no d3d12.lib is needed: d3d12_xs resolves its host entry points at run time).
+    # are linked too so the optional DEDSEC_GAME_DIR run classifies the shipped modules' imports exactly like
+    # dedsec_rt does (no d3d12.lib is needed: d3d12_xs resolves its host entry points at run time).
     add_executable(pe_loader_test
       test/pe_loader_test.cpp
       src/pe_loader.cpp
@@ -341,7 +341,7 @@ if(BUILD_TESTING)
     target_compile_definitions(pe_loader_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
     target_compile_options(pe_loader_test PRIVATE /W4 /permissive- /utf-8)
     target_link_options(pe_loader_test PRIVATE /OPT:NOREF)
-    target_link_libraries(pe_loader_test PRIVATE gta6rt_d3d12_xs_rootsig psapi)
+    target_link_libraries(pe_loader_test PRIVATE dedsec_rt_d3d12_xs_rootsig psapi)
     add_dependencies(pe_loader_test tiny_dll tiny_exe)
     add_test(NAME pe_loader COMMAND pe_loader_test "$<TARGET_FILE:tiny_dll>" "$<TARGET_FILE:tiny_exe>")
   endif()
@@ -357,7 +357,7 @@ if(BUILD_TESTING)
   add_executable(descriptor_table_test test/descriptor_table_test.cpp)
   add_test(NAME descriptor_table COMMAND descriptor_table_test)
   if(WIN32)
-    # Optional: skips unless LEONIDA_GAME_DIR and LEONIDA_MOVIE are set.
+    # Optional: skips unless DEDSEC_GAME_DIR and DEDSEC_MOVIE are set.
     add_executable(bink_decode_test
       test/bink_decode_test.cpp
       src/pe_loader.cpp
@@ -371,7 +371,7 @@ if(BUILD_TESTING)
     target_link_libraries(bink_decode_test PRIVATE psapi)
     add_test(NAME bink_decode COMMAND bink_decode_test)
 
-    # Optional: skips unless LEONIDA_GAME_DIR and LEONIDA_MOVIE_AUDIO are set.
+    # Optional: skips unless DEDSEC_GAME_DIR and DEDSEC_MOVIE_AUDIO are set.
     add_executable(bink_audio_test
       test/bink_audio_test.cpp
       src/pe_loader.cpp
@@ -400,8 +400,8 @@ if(BUILD_TESTING)
 endif()
 
 if(WIN32)
-option(LEONIDA_D3D12_SHIM_TESTS "Build the standalone D3D12 root-signature shim test" OFF)
-if(LEONIDA_D3D12_SHIM_TESTS)
+option(DEDSEC_D3D12_SHIM_TESTS "Build the standalone D3D12 root-signature shim test" OFF)
+if(DEDSEC_D3D12_SHIM_TESTS)
   enable_testing()
   add_executable(d3d12_xs_root_signature_test
     test/d3d12_xs_root_signature_test.cpp
@@ -413,7 +413,7 @@ if(LEONIDA_D3D12_SHIM_TESTS)
   target_compile_definitions(d3d12_xs_root_signature_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
   target_compile_options(d3d12_xs_root_signature_test PRIVATE /W4 /permissive- /EHsc /utf-8)
   target_link_options(d3d12_xs_root_signature_test PRIVATE /OPT:NOREF)
-  target_link_libraries(d3d12_xs_root_signature_test PRIVATE gta6rt_d3d12_xs_rootsig d3d12 dxgi)
+  target_link_libraries(d3d12_xs_root_signature_test PRIVATE dedsec_rt_d3d12_xs_rootsig d3d12 dxgi)
   add_test(NAME d3d12_xs_root_signature COMMAND d3d12_xs_root_signature_test)
 endif()
 endif()
@@ -433,50 +433,50 @@ if(Vulkan_FOUND)
   # time (tools/gen_d3d12_stubs.py), so nothing derived from the SDK header is checked in.
   find_package(Python3 COMPONENTS Interpreter QUIET)
   if(WIN32 AND Python3_FOUND)
-    set(LEONIDA_STUBS ${CMAKE_CURRENT_BINARY_DIR}/generated/d3d12_stubs.h)
+    set(DEDSEC_STUBS ${CMAKE_CURRENT_BINARY_DIR}/generated/d3d12_stubs.h)
     add_custom_command(
-      OUTPUT ${LEONIDA_STUBS}
-      COMMAND Python3::Interpreter -I ${CMAKE_CURRENT_SOURCE_DIR}/../tools/gen_d3d12_stubs.py --out ${LEONIDA_STUBS}
+      OUTPUT ${DEDSEC_STUBS}
+      COMMAND Python3::Interpreter -I ${CMAKE_CURRENT_SOURCE_DIR}/../tools/gen_d3d12_stubs.py --out ${DEDSEC_STUBS}
               ID3D12GraphicsCommandList8 ID3D12CommandQueue ID3D12CommandAllocator ID3D12Fence1
               ID3D12Device11 ID3D12DescriptorHeap ID3D12Resource
       DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/../tools/gen_d3d12_stubs.py
       COMMENT "Generating D3D12 COM stubs"
       VERBATIM)
-    add_library(gta6rt_d3d12_com STATIC shims/d3d12_com.cpp shims/d3d12_vulkan_device.cpp shims/d3d12_xs_device.cpp
-                ${LEONIDA_STUBS})   # d3d12_vulkan_device.cpp reads the PC device behind the proxy (#224)
-    target_include_directories(gta6rt_d3d12_com PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
-    target_link_libraries(gta6rt_d3d12_com PUBLIC Vulkan::Headers)
-    target_compile_definitions(gta6rt_d3d12_com PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
-    target_compile_options(gta6rt_d3d12_com PRIVATE /W4 /permissive- /utf-8)
+    add_library(dedsec_rt_d3d12_com STATIC shims/d3d12_com.cpp shims/d3d12_vulkan_device.cpp shims/d3d12_xs_device.cpp
+                ${DEDSEC_STUBS})   # d3d12_vulkan_device.cpp reads the PC device behind the proxy (#224)
+    target_include_directories(dedsec_rt_d3d12_com PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
+    target_link_libraries(dedsec_rt_d3d12_com PUBLIC Vulkan::Headers)
+    target_compile_definitions(dedsec_rt_d3d12_com PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+    target_compile_options(dedsec_rt_d3d12_com PRIVATE /W4 /permissive- /utf-8)
 
     add_executable(d3d12_com_test test/d3d12_com_test.cpp)
-    target_link_libraries(d3d12_com_test PRIVATE gta6rt_d3d12_com)
+    target_link_libraries(d3d12_com_test PRIVATE dedsec_rt_d3d12_com)
     target_compile_definitions(d3d12_com_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
     target_compile_options(d3d12_com_test PRIVATE /W4 /permissive- /utf-8)
 
     # GCL8's QueryInterface and its one method need an allocator and a list, not a Vulkan device.
     add_executable(d3d12_gcl8_test test/d3d12_gcl8_test.cpp)
-    target_link_libraries(d3d12_gcl8_test PRIVATE gta6rt_d3d12_com)
+    target_link_libraries(d3d12_gcl8_test PRIVATE dedsec_rt_d3d12_com)
     target_compile_definitions(d3d12_gcl8_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
     target_compile_options(d3d12_gcl8_test PRIVATE /W4 /permissive- /utf-8)
     add_test(NAME d3d12_gcl8 COMMAND d3d12_gcl8_test)
 
     # The Vulkan device behind the Xbox-ABI proxy, end to end.
     add_executable(d3d12_vulkan_device_test test/d3d12_vulkan_device_test.cpp)
-    target_link_libraries(d3d12_vulkan_device_test PRIVATE gta6rt_d3d12_com)
+    target_link_libraries(d3d12_vulkan_device_test PRIVATE dedsec_rt_d3d12_com)
     target_compile_definitions(d3d12_vulkan_device_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
     target_compile_options(d3d12_vulkan_device_test PRIVATE /W4 /permissive- /utf-8)
 
     # Descriptors through the proxy: copies between heaps.
     add_executable(d3d12_descriptor_test test/d3d12_descriptor_test.cpp shims/d3d12_xs_device.cpp)
-    target_link_libraries(d3d12_descriptor_test PRIVATE gta6rt_d3d12_com)
+    target_link_libraries(d3d12_descriptor_test PRIVATE dedsec_rt_d3d12_com)
     target_compile_definitions(d3d12_descriptor_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
     target_compile_options(d3d12_descriptor_test PRIVATE /W4 /permissive- /utf-8)
 
-    # The loader can create this device instead of the host's (D3D12XboxCreateDevice, LEONIDA_D3D12=vulkan).
-    if(TARGET gta6rt)
-      target_link_libraries(gta6rt PRIVATE gta6rt_d3d12_com)
-      target_compile_definitions(gta6rt PRIVATE LEONIDA_VULKAN_DEVICE)
+    # The loader can create this device instead of the host's (D3D12XboxCreateDevice, DEDSEC_D3D12=vulkan).
+    if(TARGET dedsec_rt)
+      target_link_libraries(dedsec_rt PRIVATE dedsec_rt_d3d12_com)
+      target_compile_definitions(dedsec_rt PRIVATE DEDSEC_VULKAN_DEVICE)
     endif()
   else()
     message(STATUS "Python 3 or Windows missing: the D3D12 COM objects and d3d12_com_test are not built")

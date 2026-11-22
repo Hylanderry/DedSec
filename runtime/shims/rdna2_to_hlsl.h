@@ -6,7 +6,7 @@
 // Covers all 1,933 gfx1030 ISA forms: VOP3, SDWA, FLAT, MIMG, DPP8/16, MUBUF, SOP1/2/K/C/P,
 // VOP3P, SMEM, MTBUF, VINTRP, VOP2, VOP1, EXP.
 //
-// Based on Leonida's gfx10_descriptors.h ISA tables and the AnyXboxSeries approach of
+// Based on DedSec's gfx10_descriptors.h ISA tables and the AnyXboxSeries approach of
 // direct RDNA2→HLSL translation (bypassing SPIR-V/Vulkan for lower overhead on Windows GPUs).
 //
 // Usage:
