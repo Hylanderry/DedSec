@@ -44,7 +44,9 @@ A tradução direta para HLSL SM 6.6 elimina a camada SPIR-V/Vulkan, reduzindo o
 |------------|--------|----------|
 | Verificação da cópia (Xbox 1.0.2.1) | ✅ Pronto | Detecção automática por tamanho/hash |
 | Shaders: extração e desmontagem RDNA2 | ✅ 26.503 | LLVM gfx1013, todas as formas |
-| Tradutor RDNA2 → HLSL SM 6.6 | ✅ 601 formas | MIMG(111) + FLAT(133) + MUBUF(73) + DPP8(100) + DPP16(100) + SMEM(84); VOP3/SDWA/SOP pendentes |
+| Tradutor RDNA2 → HLSL SM 6.6 | ✅ 1.246 formas | VOP3(425) + SDWA(220) + MIMG(111) + FLAT(133) + MUBUF(73) + DPP8(100) + DPP16(100) + SMEM(84); VOP1/VOP2/SOP pendentes |
+| VOP3: 425 formas | ✅ Completo | FMA/MAD f32/f64/f16, LERP, min3/max3/med3, mul_hi, BFE/BFI, pack/unpack, cmp→VCC, CNDMASK |
+| SDWA: 220 formas | ✅ Completo | sub-dword addressing: byte/half/dword select, sext/neg/abs, clamp+omod, VOP1+VOP2 wrapped |
 | MIMG (texturas): 111 formas | ✅ Completo | image_load/store/sample/gather/atomic/get_lod/resinfo |
 | FLAT/MUBUF: 206 formas | ✅ Completo | flat load/store/atomic + buffer load/store/format/atomic/resinfo |
 | DPP8/DPP16: 200 formas | ✅ Completo | wave-lane permutation, quad shuffle, bcnt, mbcnt, perm |
