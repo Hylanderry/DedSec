@@ -149,6 +149,41 @@ if(WIN32)
   target_compile_options(dxc_compiler_test PRIVATE /W4 /permissive- /utf-8)
   add_test(NAME dxc_compiler COMMAND dxc_compiler_test)
 
+  # DedSec RDNA2 MIMG (Memory Image) Translator — 111 texture instruction forms
+  add_library(dedsec_rdna2_mimg STATIC
+    shims/rdna2_mimg.cpp
+  )
+  target_include_directories(dedsec_rdna2_mimg PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/shims)
+  target_compile_definitions(dedsec_rdna2_mimg PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(dedsec_rdna2_mimg PRIVATE /W4 /permissive- /utf-8)
+
+  # DedSec MIMG Translator unit test
+  add_executable(rdna2_mimg_test
+    test/rdna2_mimg_test.cpp
+  )
+  target_link_libraries(rdna2_mimg_test PRIVATE dedsec_rdna2_mimg)
+  target_compile_definitions(rdna2_mimg_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(rdna2_mimg_test PRIVATE /W4 /permissive- /utf-8)
+  add_test(NAME rdna2_mimg COMMAND rdna2_mimg_test)
+
+  # DedSec Xbox→PC Input Adapter (GameInput + XInput + Keyboard fallback)
+  add_library(dedsec_xbox_input STATIC
+    shims/xbox_input_adapter.cpp
+  )
+  target_include_directories(dedsec_xbox_input PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/shims)
+  target_compile_definitions(dedsec_xbox_input PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(dedsec_xbox_input PRIVATE /W4 /permissive- /utf-8)
+  target_link_libraries(dedsec_xbox_input PRIVATE xinput)
+
+  # DedSec Xbox Input Adapter unit test
+  add_executable(xbox_input_adapter_test
+    test/xbox_input_adapter_test.cpp
+  )
+  target_link_libraries(xbox_input_adapter_test PRIVATE dedsec_xbox_input)
+  target_compile_definitions(xbox_input_adapter_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(xbox_input_adapter_test PRIVATE /W4 /permissive- /utf-8)
+  add_test(NAME xbox_input_adapter COMMAND xbox_input_adapter_test)
+
   add_executable(gta6rt
     src/main.cpp
     src/pe_loader.cpp
@@ -162,7 +197,7 @@ if(WIN32)
   target_compile_options(gta6rt PRIVATE /W4 /permissive- /utf-8)
   # Static shim tables register themselves at startup; keep the linker from dropping their objects.
   target_link_options(gta6rt PRIVATE /OPT:NOREF)
-  target_link_libraries(gta6rt PRIVATE gta6rt_d3d12_xs_rootsig gta6rt_xtaskqueue dedsec_fsr3 dedsec_gpu_tier dedsec_shader_cache dedsec_pso_warmup dedsec_async_compute dedsec_occlusion_cull dedsec_vrs dedsec_rdna2_translator dedsec_dxc_compiler psapi)
+  target_link_libraries(gta6rt PRIVATE gta6rt_d3d12_xs_rootsig gta6rt_xtaskqueue dedsec_fsr3 dedsec_gpu_tier dedsec_shader_cache dedsec_pso_warmup dedsec_async_compute dedsec_occlusion_cull dedsec_vrs dedsec_rdna2_translator dedsec_dxc_compiler dedsec_rdna2_mimg dedsec_xbox_input psapi)
 
   # Root-signature forwarding test: needs a real PC d3d12.lib to serialize the synthetic descriptors.
   # find_library searches %LIB% (a Developer Prompt), not the Windows SDK the Visual Studio generator links
