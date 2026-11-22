@@ -51,6 +51,15 @@ if(WIN32)
   target_compile_options(gta6rt_xtaskqueue PRIVATE /utf-8)  # third-party code: its own warning level
   target_link_libraries(gta6rt_xtaskqueue PUBLIC ole32)
 
+  # DedSec GPU Tier Detection & Scalable Presets
+  add_library(dedsec_gpu_tier STATIC
+    shims/dedsec_gpu_tier.cpp
+  )
+  target_include_directories(dedsec_gpu_tier PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/shims)
+  target_compile_definitions(dedsec_gpu_tier PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(dedsec_gpu_tier PRIVATE /W4 /permissive- /utf-8)
+  target_link_libraries(dedsec_gpu_tier PRIVATE d3d12 dxgi)
+
   # DedSec FSR3 Frame Generation + Upscaling (DX12 Native Pipeline)
   add_library(dedsec_fsr3 STATIC
     shims/dedsec_fsr3.cpp
@@ -59,7 +68,7 @@ if(WIN32)
   target_include_directories(dedsec_fsr3 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/shims)
   target_compile_definitions(dedsec_fsr3 PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
   target_compile_options(dedsec_fsr3 PRIVATE /W4 /permissive- /utf-8)
-  target_link_libraries(dedsec_fsr3 PRIVATE d3d12 dxgi)
+  target_link_libraries(dedsec_fsr3 PRIVATE d3d12 dxgi dedsec_gpu_tier)
 
   add_executable(gta6rt
     src/main.cpp
@@ -74,7 +83,7 @@ if(WIN32)
   target_compile_options(gta6rt PRIVATE /W4 /permissive- /utf-8)
   # Static shim tables register themselves at startup; keep the linker from dropping their objects.
   target_link_options(gta6rt PRIVATE /OPT:NOREF)
-  target_link_libraries(gta6rt PRIVATE gta6rt_d3d12_xs_rootsig gta6rt_xtaskqueue dedsec_fsr3 psapi)
+  target_link_libraries(gta6rt PRIVATE gta6rt_d3d12_xs_rootsig gta6rt_xtaskqueue dedsec_fsr3 dedsec_gpu_tier psapi)
 
   # Root-signature forwarding test: needs a real PC d3d12.lib to serialize the synthetic descriptors.
   # find_library searches %LIB% (a Developer Prompt), not the Windows SDK the Visual Studio generator links
