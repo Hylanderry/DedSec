@@ -142,6 +142,15 @@ if(WIN32)
   target_compile_options(dedsec_d3d12x_proxy PRIVATE /W4 /permissive- /utf-8)
   target_link_libraries(dedsec_d3d12x_proxy PRIVATE d3d12 dxgi)
 
+  # DedSec DXC Runtime — in-process HLSL→DXIL compilation with disk cache and memory gating
+  add_library(dedsec_dxc_runtime STATIC
+    shims/dedsec_dxc_runtime.cpp
+  )
+  target_include_directories(dedsec_dxc_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/shims)
+  target_compile_definitions(dedsec_dxc_runtime PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(dedsec_dxc_runtime PRIVATE /W4 /permissive- /utf-8)
+  target_link_libraries(dedsec_dxc_runtime PRIVATE d3dcompiler)
+
   # DedSec RDNA2 → HLSL SM 6.6 Translator
   add_library(dedsec_rdna2_translator STATIC
     shims/rdna2_to_hlsl.cpp
