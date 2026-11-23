@@ -293,6 +293,50 @@ if(WIN32)
   target_compile_definitions(dedsec_rdna2_vintrp_exp_mtbuf_vop3p PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
   target_compile_options(dedsec_rdna2_vintrp_exp_mtbuf_vop3p PRIVATE /W4 /permissive- /utf-8)
 
+  # DedSec Command List IR — zero-alloc ring buffer + serialization for Xbox D3D12.X commands
+  add_library(dedsec_command_list STATIC
+    src/command_list.cpp
+  )
+  target_include_directories(dedsec_command_list PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_compile_definitions(dedsec_command_list PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(dedsec_command_list PRIVATE /W4 /permissive- /utf-8)
+
+  # DedSec Replay Engine — Xbox IR → PC D3D12 translation with batch submission and error recovery
+  add_library(dedsec_replay_engine STATIC
+    src/replay_engine.cpp
+  )
+  target_include_directories(dedsec_replay_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_compile_definitions(dedsec_replay_engine PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(dedsec_replay_engine PRIVATE /W4 /permissive- /utf-8)
+  target_link_libraries(dedsec_replay_engine PRIVATE d3d12 dedsec_command_list)
+
+  # DedSec PSO Pipeline — graphics/compute PSO creation with hash cache and async workers
+  add_library(dedsec_pso_pipeline STATIC
+    shims/dedsec_pso_pipeline.cpp
+  )
+  target_include_directories(dedsec_pso_pipeline PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/shims)
+  target_compile_definitions(dedsec_pso_pipeline PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(dedsec_pso_pipeline PRIVATE /W4 /permissive- /utf-8)
+  target_link_libraries(dedsec_pso_pipeline PRIVATE d3d12 dedsec_xbch_parser)
+
+  # DedSec UMA Allocator — buddy sub-allocator over a CPU/GPU-visible ID3D12Heap
+  add_library(dedsec_uma_allocator STATIC
+    src/dedsec_uma_allocator.cpp
+  )
+  target_include_directories(dedsec_uma_allocator PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_compile_definitions(dedsec_uma_allocator PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(dedsec_uma_allocator PRIVATE /W4 /permissive- /utf-8)
+  target_link_libraries(dedsec_uma_allocator PRIVATE d3d12)
+
+  # DedSec UMA Allocator unit test (synthetic allocations, stub D3D12 COM objects)
+  add_executable(uma_allocator_test
+    test/uma_allocator_test.cpp
+  )
+  target_link_libraries(uma_allocator_test PRIVATE dedsec_uma_allocator)
+  target_compile_definitions(uma_allocator_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(uma_allocator_test PRIVATE /W4 /permissive- /utf-8)
+  add_test(NAME uma_allocator COMMAND uma_allocator_test)
+
   # DedSec kernelx.dll Shim — Xbox kernel API reimplementation (memory, sync, TLS, threads)
   add_library(dedsec_kernelx STATIC
     shims/kernelx.cpp
@@ -309,6 +353,23 @@ if(WIN32)
   target_compile_definitions(dedsec_rpf9_reader PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
   target_compile_options(dedsec_rpf9_reader PRIVATE /W4 /permissive- /utf-8)
   target_link_libraries(dedsec_rpf9_reader PRIVATE dedsec_gdeflate)
+
+  # DedSec GFX10 Texture Tiling/Swizzle Decoder — RDNA2 micro/macro-tile to linear
+  add_library(dedsec_texture_tiling STATIC
+    src/dedsec_texture_tiling.cpp
+  )
+  target_include_directories(dedsec_texture_tiling PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_compile_definitions(dedsec_texture_tiling PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(dedsec_texture_tiling PRIVATE /W4 /permissive- /utf-8)
+
+  # DedSec Texture Tiling unit test (synthetic tiled data, no game assets)
+  add_executable(texture_tiling_test
+    test/texture_tiling_test.cpp
+  )
+  target_link_libraries(texture_tiling_test PRIVATE dedsec_texture_tiling)
+  target_compile_definitions(texture_tiling_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(texture_tiling_test PRIVATE /W4 /permissive- /utf-8)
+  add_test(NAME texture_tiling COMMAND texture_tiling_test)
 
   # DedSec VFS Layer — path mapping, overlay support, archive integration
   add_library(dedsec_vfs STATIC
@@ -511,6 +572,20 @@ if(BUILD_TESTING)
   add_test(NAME command_list COMMAND command_list_test)
   add_executable(command_list_draw_test test/command_list_draw_test.cpp)
   add_test(NAME command_list_draw COMMAND command_list_draw_test)
+
+  # DedSec Command List IR Full Test — expanded commands, ring buffer, serialization round-trip
+  add_executable(command_list_full_test test/command_list_full_test.cpp)
+  target_link_libraries(command_list_full_test PRIVATE dedsec_command_list)
+  target_compile_definitions(command_list_full_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(command_list_full_test PRIVATE /W4 /permissive- /utf-8)
+  add_test(NAME command_list_full COMMAND command_list_full_test)
+
+  # DedSec Replay Engine Test — IR management, stats, error recovery (no GPU needed)
+  add_executable(replay_engine_test test/replay_engine_test.cpp)
+  target_link_libraries(replay_engine_test PRIVATE dedsec_replay_engine)
+  target_compile_definitions(replay_engine_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(replay_engine_test PRIVATE /W4 /permissive- /utf-8)
+  add_test(NAME replay_engine COMMAND replay_engine_test)
   add_executable(descriptor_table_test test/descriptor_table_test.cpp)
   add_test(NAME descriptor_table COMMAND descriptor_table_test)
   if(WIN32)

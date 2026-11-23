@@ -387,18 +387,122 @@ struct SetRootConstants {
     std::vector<std::uint32_t> values;
 };
 
-// SetGraphicsRootDescriptorTable (bindless GPU VA)
+// SetGraphicsRootDescriptorTable / SetComputeRootDescriptorTable (bindless GPU VA)
 struct SetRootDescriptorTable {
     std::uint32_t root_parameter_index;
     GpuVirtualAddress gpu_address;
+    bool compute;  // true = compute root, false = graphics root
+};
+
+// SetDescriptorHeaps — only CBV_SRV_UAV and RTV heaps are allowed, max 2
+struct SetDescriptorHeaps {
+    ResourceId heaps[2];       // resource IDs of descriptor heaps
+    std::uint32_t heap_count;  // 0, 1 or 2
+};
+
+// SetComputeRootSignature — separate from graphics root signature
+struct SetComputeRootSignature {
+    ResourceId root_signature;
+};
+
+// ClearUnorderedAccessViewUint / ClearUnorderedAccessViewFloat
+struct ClearUav {
+    TargetView target;
+    std::array<std::uint32_t, 4> uint_values;
+    ClearColor float_values;
+    bool use_float;            // true = float clear, false = uint clear
+    std::vector<Rect> rects;
+};
+
+// ExecuteIndirect — indirect draw/dispatch via buffer
+enum class IndirectCommandType : std::uint32_t {
+    draw = 0,
+    draw_indexed = 1,
+    dispatch = 2,
+};
+
+struct ExecuteIndirect {
+    IndirectCommandType type;
+    ResourceId command_buffer;
+    std::uint64_t command_buffer_offset;
+    std::uint32_t max_command_count;
+    ResourceId count_buffer;           // 0 = no count buffer
+    std::uint64_t count_buffer_offset;
+};
+
+// SetPredication — conditional rendering
+struct SetPredication {
+    ResourceId buffer;
+    std::uint64_t offset;
+    bool condition_equal_zero;  // true = skip if zero, false = skip if non-zero
+};
+
+// SOSetTargets — stream output targets
+struct SoTarget {
+    ResourceId resource;
+    std::uint64_t offset;
+    std::uint64_t size;
+};
+
+struct SetStreamOutputTargets {
+    std::vector<SoTarget> targets;  // up to 4
+    bool append;
+};
+
+// SetBlendFactor
+struct SetBlendFactor {
+    float factor[4];
+};
+
+// SetStencilRef
+struct SetStencilRef {
+    std::uint32_t stencil_ref;
+};
+
+// SetSamplePositions (MSAA sample positions)
+struct SamplePosition {
+    std::int8_t x;
+    std::int8_t y;
+};
+
+struct SetSamplePositions {
+    std::uint32_t sample_count;
+    std::uint32_t pixel_count;
+    std::vector<SamplePosition> positions;
+};
+
+// SetShadingRate (VRS)
+enum class ShadingRate : std::uint32_t {
+    rate_1x1 = 0,
+    rate_1x2 = 1,
+    rate_2x1 = 2,
+    rate_2x2 = 3,
+    rate_2x4 = 4,
+    rate_4x2 = 5,
+    rate_4x4 = 6,
+};
+
+struct SetShadingRate {
+    ShadingRate base_rate;
+    std::uint32_t combiner_ops[2];  // D3D12_SHADING_RATE_COMBINER_OP
+};
+
+// RSSetShadingRateImage
+struct SetShadingRateImage {
+    ResourceId resource;
 };
 
 using Command = std::variant<TransitionBarrier, UavBarrier, AliasingBarrier, GlobalBarrier, BufferBarrier,
-                             TextureBarrier, ClearRenderTarget, ClearDepthStencil, CopyBuffer, CopyTexture,
-                             CopyResource, ResolveSubresource, SetPipelineState, SetRootSignature,
-                             SetVertexBuffer, SetIndexBuffer, SetViewports, SetScissors, SetRenderTargets,
-                             DrawInstanced, DrawIndexedInstanced, Dispatch, SetRootConstants,
-                             SetRootDescriptorTable>;
+                             TextureBarrier, ClearRenderTarget, ClearDepthStencil, ClearUav,
+                             CopyBuffer, CopyTexture, CopyResource, ResolveSubresource,
+                             SetPipelineState, SetRootSignature, SetComputeRootSignature,
+                             SetDescriptorHeaps, SetVertexBuffer, SetIndexBuffer,
+                             SetViewports, SetScissors, SetRenderTargets,
+                             DrawInstanced, DrawIndexedInstanced, Dispatch,
+                             SetRootConstants, SetRootDescriptorTable,
+                             ExecuteIndirect, SetPredication, SetStreamOutputTargets,
+                             SetBlendFactor, SetStencilRef, SetSamplePositions,
+                             SetShadingRate, SetShadingRateImage>;
 
 class CommandList {
 public:
@@ -568,10 +672,139 @@ public:
                                        {values.begin(), values.end()}});
     }
 
-    bool set_root_descriptor_table(std::uint32_t root_parameter_index, GpuVirtualAddress gpu_address) {
+    bool set_root_descriptor_table(std::uint32_t root_parameter_index, GpuVirtualAddress gpu_address,
+                                   bool compute = false) {
         if (!gpu_address) return false;
-        return append(SetRootDescriptorTable{root_parameter_index, gpu_address});
+        return append(SetRootDescriptorTable{root_parameter_index, gpu_address, compute});
     }
+
+    // --- Compute Root Signature (separate from graphics) ---
+
+    bool set_compute_root_signature(ResourceId root_signature) {
+        if (!root_signature) return false;
+        return append(SetComputeRootSignature{root_signature});
+    }
+
+    // --- Descriptor Heaps ---
+
+    bool set_descriptor_heaps(std::span<const ResourceId> heaps) {
+        if (heaps.size() > 2) return false;
+        SetDescriptorHeaps cmd{};
+        cmd.heap_count = static_cast<std::uint32_t>(heaps.size());
+        for (std::uint32_t i = 0; i < cmd.heap_count; ++i) cmd.heaps[i] = heaps[i];
+        return append(cmd);
+    }
+
+    // --- Clear UAV ---
+
+    bool clear_uav_float(const TargetView& target, const ClearColor& values, std::span<const Rect> rects = {}) {
+        if (!valid(target)) return false;
+        return append(ClearUav{target, {}, values, true, {rects.begin(), rects.end()}});
+    }
+
+    bool clear_uav_uint(const TargetView& target, const std::array<std::uint32_t, 4>& values,
+                        std::span<const Rect> rects = {}) {
+        if (!valid(target)) return false;
+        return append(ClearUav{target, values, {}, false, {rects.begin(), rects.end()}});
+    }
+
+    // --- Execute Indirect ---
+
+    bool execute_indirect(IndirectCommandType type, ResourceId command_buffer, std::uint64_t offset,
+                          std::uint32_t max_count, ResourceId count_buffer = 0, std::uint64_t count_offset = 0) {
+        if (!command_buffer || !max_count) return false;
+        return append(ExecuteIndirect{type, command_buffer, offset, max_count, count_buffer, count_offset});
+    }
+
+    // --- Predication ---
+
+    bool set_predication(ResourceId buffer, std::uint64_t offset, bool condition_equal_zero) {
+        return append(SetPredication{buffer, offset, condition_equal_zero});
+    }
+
+    // --- Stream Output ---
+
+    bool set_stream_output_targets(std::span<const SoTarget> targets, bool append_mode = false) {
+        if (targets.size() > 4) return false;
+        return append(SetStreamOutputTargets{{targets.begin(), targets.end()}, append_mode});
+    }
+
+    // --- Blend Factor & Stencil Ref ---
+
+    bool set_blend_factor(float r, float g, float b, float a) {
+        return append(SetBlendFactor{{r, g, b, a}});
+    }
+
+    bool set_stencil_ref(std::uint32_t ref) {
+        return append(SetStencilRef{ref});
+    }
+
+    // --- Sample Positions (MSAA) ---
+
+    bool set_sample_positions(std::uint32_t sample_count, std::uint32_t pixel_count,
+                              std::span<const SamplePosition> positions) {
+        if (!sample_count || !pixel_count || positions.empty()) return false;
+        return append(SetSamplePositions{sample_count, pixel_count, {positions.begin(), positions.end()}});
+    }
+
+    // --- Variable Rate Shading ---
+
+    bool set_shading_rate(ShadingRate rate, std::uint32_t combiner0 = 0, std::uint32_t combiner1 = 0) {
+        return append(SetShadingRate{rate, {combiner0, combiner1}});
+    }
+
+    bool set_shading_rate_image(ResourceId resource) {
+        return append(SetShadingRateImage{resource});
+    }
+
+    // --- Serialization ---
+
+    // Serialize all commands into a flat byte buffer for replay or disk cache.
+    // Format: [uint32_t command_count][tag + payload]...
+    // Returns empty vector on failure.
+    std::vector<std::uint8_t> serialize() const;
+
+    // Deserialize from a buffer produced by serialize(). Returns false on any corruption.
+    bool deserialize(std::span<const std::uint8_t> data);
+
+    // --- Ring Buffer Allocator (zero-alloc per frame) ---
+
+    // Pre-allocated ring buffer for command storage. Avoids heap allocation during recording.
+    // Capacity is in number of Command slots.
+    class RingAllocator {
+    public:
+        explicit RingAllocator(std::size_t capacity = 4096);
+        ~RingAllocator();
+
+        // Non-copyable, movable
+        RingAllocator(const RingAllocator&) = delete;
+        RingAllocator& operator=(const RingAllocator&) = delete;
+        RingAllocator(RingAllocator&& other) noexcept;
+        RingAllocator& operator=(RingAllocator&& other) noexcept;
+
+        // Allocate a slot in the ring. Returns nullptr if full.
+        Command* allocate();
+
+        // Reset the write cursor (call once per frame after submission).
+        void reset();
+
+        // Number of commands currently stored.
+        std::size_t size() const { return write_pos_ - read_pos_; }
+
+        // Whether the ring is full.
+        bool full() const { return size() >= capacity_; }
+
+        // Iterate stored commands.
+        std::span<const Command> commands() const;
+
+        std::size_t capacity() const { return capacity_; }
+
+    private:
+        Command* buffer_;
+        std::size_t capacity_;
+        std::size_t write_pos_;
+        std::size_t read_pos_;
+    };
 
     bool close() {
         if (closed_) return false;
