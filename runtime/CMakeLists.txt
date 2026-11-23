@@ -293,6 +293,32 @@ if(WIN32)
   target_compile_definitions(dedsec_rdna2_vintrp_exp_mtbuf_vop3p PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
   target_compile_options(dedsec_rdna2_vintrp_exp_mtbuf_vop3p PRIVATE /W4 /permissive- /utf-8)
 
+  # DedSec kernelx.dll Shim — Xbox kernel API reimplementation (memory, sync, TLS, threads)
+  add_library(dedsec_kernelx STATIC
+    shims/kernelx.cpp
+  )
+  target_include_directories(dedsec_kernelx PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/shims)
+  target_compile_definitions(dedsec_kernelx PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(dedsec_kernelx PRIVATE /W4 /permissive- /utf-8)
+
+  # DedSec RPF9 Reader — streaming archive reader with GDeflate decompression
+  add_library(dedsec_rpf9_reader STATIC
+    src/rpf9_reader.cpp
+  )
+  target_include_directories(dedsec_rpf9_reader PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_compile_definitions(dedsec_rpf9_reader PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(dedsec_rpf9_reader PRIVATE /W4 /permissive- /utf-8)
+  target_link_libraries(dedsec_rpf9_reader PRIVATE dedsec_gdeflate)
+
+  # DedSec VFS Layer — path mapping, overlay support, archive integration
+  add_library(dedsec_vfs STATIC
+    src/vfs.cpp
+  )
+  target_include_directories(dedsec_vfs PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_compile_definitions(dedsec_vfs PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(dedsec_vfs PRIVATE /W4 /permissive- /utf-8)
+  target_link_libraries(dedsec_vfs PRIVATE dedsec_rpf9_reader)
+
   add_executable(dedsec_rt
     src/main.cpp
     src/pe_loader.cpp
@@ -300,6 +326,7 @@ if(WIN32)
     src/dedsec_cpu_writes.cpp
     shims/registry.cpp
     shims/xmem.cpp
+    shims/kernelx.cpp
     shims/d3d12_xs.cpp
     shims/d3d12_xs_device.cpp
     shims/xgameruntime.cpp
@@ -308,7 +335,7 @@ if(WIN32)
   target_compile_options(dedsec_rt PRIVATE /W4 /permissive- /utf-8)
   # Static shim tables register themselves at startup; keep the linker from dropping their objects.
   target_link_options(dedsec_rt PRIVATE /OPT:NOREF)
-  target_link_libraries(dedsec_rt PRIVATE dedsec_rt_d3d12_xs_rootsig dedsec_rt_xtaskqueue dedsec_fsr3 dedsec_gpu_tier dedsec_shader_cache dedsec_pso_warmup dedsec_async_compute dedsec_occlusion_cull dedsec_vrs dedsec_rdna2_translator dedsec_dxc_compiler dedsec_rdna2_mimg dedsec_xbox_input dedsec_gdeflate dedsec_xaudio2 dedsec_rdna2_flat_mubuf dedsec_rdna2_dpp_smem dedsec_rdna2_vop3 dedsec_rdna2_sdwa dedsec_rdna2_vop1_vop2 dedsec_rdna2_sop dedsec_rdna2_vintrp_exp_mtbuf_vop3p psapi)
+  target_link_libraries(dedsec_rt PRIVATE dedsec_rt_d3d12_xs_rootsig dedsec_rt_xtaskqueue dedsec_kernelx dedsec_rpf9_reader dedsec_vfs dedsec_fsr3 dedsec_gpu_tier dedsec_shader_cache dedsec_pso_warmup dedsec_async_compute dedsec_occlusion_cull dedsec_vrs dedsec_rdna2_translator dedsec_dxc_compiler dedsec_rdna2_mimg dedsec_xbox_input dedsec_gdeflate dedsec_xaudio2 dedsec_rdna2_flat_mubuf dedsec_rdna2_dpp_smem dedsec_rdna2_vop3 dedsec_rdna2_sdwa dedsec_rdna2_vop1_vop2 dedsec_rdna2_sop dedsec_rdna2_vintrp_exp_mtbuf_vop3p psapi)
 
   # Root-signature forwarding test: needs a real PC d3d12.lib to serialize the synthetic descriptors.
   # find_library searches %LIB% (a Developer Prompt), not the Windows SDK the Visual Studio generator links
@@ -521,6 +548,47 @@ if(BUILD_TESTING)
   if(WIN32 AND TARGET xgameruntime_test)
     add_test(NAME xgameruntime COMMAND xgameruntime_test)
   endif()
+
+  # DedSec kernelx.dll shim test: memory, sync, TLS, threads (no game data)
+  add_executable(kernelx_test
+    test/kernelx_test.cpp
+    shims/kernelx.cpp
+    shims/registry.cpp
+  )
+  target_include_directories(kernelx_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/shims)
+  target_compile_definitions(kernelx_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(kernelx_test PRIVATE /W4 /permissive- /utf-8)
+  target_link_options(kernelx_test PRIVATE /OPT:NOREF)
+  add_test(NAME kernelx COMMAND kernelx_test)
+
+  # DedSec RPF9 Reader test: header parsing, joaat hash, streaming (synthetic archives)
+  add_executable(rpf9_reader_test
+    test/rpf9_reader_test.cpp
+    src/rpf9_reader.cpp
+    shims/gdeflate_decompressor.cpp
+  )
+  target_include_directories(rpf9_reader_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/shims
+  )
+  target_compile_definitions(rpf9_reader_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(rpf9_reader_test PRIVATE /W4 /permissive- /utf-8)
+  add_test(NAME rpf9_reader COMMAND rpf9_reader_test)
+
+  # DedSec VFS Layer test: path mapping, overlay, archive integration (synthetic data)
+  add_executable(vfs_test
+    test/vfs_test.cpp
+    src/vfs.cpp
+    src/rpf9_reader.cpp
+    shims/gdeflate_decompressor.cpp
+  )
+  target_include_directories(vfs_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/shims
+  )
+  target_compile_definitions(vfs_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(vfs_test PRIVATE /W4 /permissive- /utf-8)
+  add_test(NAME vfs COMMAND vfs_test)
   if(WIN32 AND TARGET root_signature_test)
     add_test(NAME root_signature COMMAND root_signature_test)
   endif()
@@ -592,13 +660,22 @@ if(Vulkan_FOUND)
     add_test(NAME d3d12_gcl8 COMMAND d3d12_gcl8_test)
 
     # The Vulkan device behind the Xbox-ABI proxy, end to end.
-    add_executable(d3d12_vulkan_device_test test/d3d12_vulkan_device_test.cpp)
+    add_executable(d3d12_vulkan_device_test
+      test/d3d12_vulkan_device_test.cpp
+      src/dedsec_frame_clock.cpp
+      src/dedsec_cpu_writes.cpp
+    )
     target_link_libraries(d3d12_vulkan_device_test PRIVATE dedsec_rt_d3d12_com)
     target_compile_definitions(d3d12_vulkan_device_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
     target_compile_options(d3d12_vulkan_device_test PRIVATE /W4 /permissive- /utf-8)
 
     # Descriptors through the proxy: copies between heaps.
-    add_executable(d3d12_descriptor_test test/d3d12_descriptor_test.cpp shims/d3d12_xs_device.cpp)
+    add_executable(d3d12_descriptor_test
+      test/d3d12_descriptor_test.cpp
+      shims/d3d12_xs_device.cpp
+      src/dedsec_frame_clock.cpp
+      src/dedsec_cpu_writes.cpp
+    )
     target_link_libraries(d3d12_descriptor_test PRIVATE dedsec_rt_d3d12_com)
     target_compile_definitions(d3d12_descriptor_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
     target_compile_options(d3d12_descriptor_test PRIVATE /W4 /permissive- /utf-8)
