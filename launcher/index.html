@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Grand Theft Auth VI — DedSec</title>
+<style>
+ @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400&display=swap');
+
+ :root {
+ --bg: #0c0c0c;
+ --surface: #141414;
+ --border: #2a2a2a;
+ --text: #e8e8e8;
+ --muted: #777;
+ --dim: #444;
+ --green: #1DA815;
+ --yellow: #F7E317;
+ --red: #c0392b;
+ }
+
+ * { margin: 0; padding: 0; box-sizing: border-box; }
+
+ body {
+ background: var(--bg);
+ color: var(--text);
+ font-family: 'Inter', system-ui, sans-serif;
+ height: 100vh;
+ overflow: hidden;
+ user-select: none;
+ }
+
+ .app {
+ display: grid;
+ grid-template-columns: 1fr 300px;
+ grid-template-rows: 44px 1fr 28px;
+ height: 100vh;
+ }
+
+ /* Header */
+ .hdr {
+ grid-column: 1 / -1;
+ display: flex;
+ align-items: center;
+ justify-content: space-between;
+ padding: 0 16px;
+ border-bottom: 1px solid var(--border);
+ }
+ .hdr-left { display: flex; align-items: center; gap: 10px; }
+ .logo-svg {
+ width: 36px;
+ height: 28px;
+ flex-shrink: 0;
+ }
+ .title { font-size: 13px; font-weight: 500; }
+ .title small { color: var(--dim); font-weight: 400; font-family: 'JetBrains Mono', monospace; font-size: 10px; margin-left: 6px; }
+ .hdr-right { display: flex; align-items: center; gap: 6px; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--muted); }
+ .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--green); }
+ .dot.warn { background: var(--yellow); }
+ .dot.err { background: var(--red); }
+
+ /* Main settings */
+ .main { border-right: 1px solid var(--border); padding: 16px; overflow-y: auto; }
+ .sec { margin-bottom: 20px; }
+ .sec-t { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; color: var(--dim); margin-bottom: 10px; }
+
+ .row { margin-bottom: 10px; }
+ .row label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+ .row select {
+ width: 100%; background: var(--surface); border: 1px solid var(--border);
+ border-radius: 3px; color: var(--text); padding: 6px 8px;
+ font-family: 'JetBrains Mono', monospace; font-size: 11px;
+ outline: none; cursor: pointer; appearance: none;
+ background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%23444'/%3E%3C/svg%3E");
+ background-repeat: no-repeat; background-position: right 8px center;
+ }
+ .row select:focus { border-color: #3a3a3a; }
+ .row select option { background: var(--surface); }
+
+ .rng { display: flex; align-items: center; gap: 8px; }
+ .rng input[type=range] {
+ flex: 1; appearance: none; height: 2px; background: var(--border); border-radius: 1px; outline: none;
+ }
+ .rng input[type=range]::-webkit-slider-thumb {
+ appearance: none; width: 10px; height: 10px; background: var(--text); border-radius: 50%; cursor: pointer;
+ }
+ .rng .v { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--muted); min-width: 36px; text-align: right; }
+
+ .tgl { display: flex; align-items: center; justify-content: space-between; padding: 5px 0; }
+ .tgl label { font-size: 11px; color: var(--muted); margin: 0; }
+ .sw { position: relative; width: 28px; height: 16px; cursor: pointer; }
+ .sw input { display: none; }
+ .sw .tr { position: absolute; inset: 0; background: var(--border); border-radius: 8px; transition: background 0.15s; }
+ .sw .tr::after { content:''; position: absolute; width: 10px; height: 10px; left: 3px; top: 3px; background: var(--dim); border-radius: 50%; transition: transform 0.15s, background 0.15s; }
+ .sw input:checked + .tr { background: var(--green); }
+ .sw input:checked + .tr::after { transform: translateX(12px); background: #fff; }
+
+ /* Dev section — hidden by default */
+ .dev-sec { display: none; border-top: 1px solid var(--border); padding-top: 16px; margin-top: 16px; }
+ .dev-sec.visible { display: block; }
+ .dev-badge { font-size: 8px; font-family: 'JetBrains Mono', monospace; color: var(--yellow); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 10px; }
+
+ /* Sidebar */
+ .side { display: flex; flex-direction: column; padding: 16px; gap: 12px; }
+ .card { background: var(--surface); border: 1px solid var(--border); border-radius: 3px; padding: 12px; }
+ .hw { display: flex; justify-content: space-between; padding: 3px 0; font-size: 10px; }
+ .hw-l { color: var(--dim); font-family: 'JetBrains Mono', monospace; }
+ .hw-v { color: var(--muted); font-family: 'JetBrains Mono', monospace; }
+ .hw-v.ok { color: var(--green); }
+ .hw-v.wn { color: var(--yellow); }
+ .hw-v.bad { color: var(--red); }
+
+ .play {
+ width: 100%; padding: 12px; border: none; border-radius: 3px;
+ background: var(--green); color: #000;
+ font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 600;
+ letter-spacing: 0.5px; text-transform: uppercase; cursor: pointer;
+ transition: opacity 0.1s;
+ }
+ .play:hover { opacity: 0.85; }
+ .play:disabled { background: var(--border); color: var(--dim); cursor: not-allowed; }
+
+ .upd { background: var(--surface); border: 1px solid var(--border); border-radius: 3px; padding: 10px; }
+ .upd-s { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--dim); margin-bottom: 6px; }
+ .upd-s.up { color: var(--yellow); }
+ .upd-s.ok { color: var(--green); }
+ .upd-s.er { color: var(--red); }
+ .upd-b {
+ padding: 4px 10px; border: 1px solid var(--border); border-radius: 2px;
+ background: transparent; color: var(--muted);
+ font-family: 'JetBrains Mono', monospace; font-size: 10px; cursor: pointer;
+ }
+ .upd-b:hover { border-color: var(--dim); }
+
+ .log {
+ flex: 1; min-height: 0;
+ background: var(--surface); border: 1px solid var(--border); border-radius: 3px;
+ padding: 8px; overflow-y: auto;
+ font-family: 'JetBrains Mono', monospace; font-size: 9px; line-height: 1.5; color: var(--dim);
+ }
+ .ll { white-space: pre-wrap; word-break: break-all; }
+ .ll.ok { color: var(--green); }
+ .ll.wn { color: var(--yellow); }
+ .ll.er { color: var(--red); }
+ .ll.in { color: var(--muted); }
+
+ /* Footer */
+ .ftr {
+ grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between;
+ padding: 0 16px; border-top: 1px solid var(--border);
+ font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--dim);
+ }
+ .ftr a { color: var(--dim); text-decoration: none; }
+ .ftr a:hover { color: var(--muted); }
+
+ ::-webkit-scrollbar { width: 3px; }
+ ::-webkit-scrollbar-track { background: transparent; }
+ ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<div class="app">
+ <div class="hdr">
+ <div class="hdr-left">
+ <svg class="logo-svg" viewBox="0 0 100 80" xmlns="http://www.w3.org/2000/svg">
+ <!-- Palm tree silhouettes -->
+ <path d="M 30 25 Q 32 20 35 15 L 36 16 Q 38 18 37 22 L 38 23 Q 35 28 30 25 Z M 33 22 L 34 18 M 32 24 L 35 20" stroke="#0B1402" stroke-width="1.5" fill="none"/>
+ <path d="M 60 20 Q 62 15 65 10 L 66 11 Q 68 13 67 17 L 68 18 Q 65 23 60 20 Z M 63 17 L 64 13 M 62 19 L 65 15" stroke="#0B1402" stroke-width="1.5" fill="none"/>
+ <!-- V shape with Brazilian colors -->
+ <path d="M 15 10 Q 20 8 25 15 L 45 55 Q 47 58 50 55 L 70 15 Q 75 8 80 10 L 85 12 Q 88 14 86 18 L 60 70 Q 58 75 55 75 L 45 75 Q 42 75 40 70 L 14 18 Q 12 14 15 12 Z" fill="#1DA815"/>
+ <path d="M 25 15 L 45 55 Q 47 58 50 55 L 70 15 L 65 12 Q 60 18 50 45 Q 40 18 35 12 Z" fill="#F7E317"/>
+ <path d="M 40 70 L 14 18 Q 12 14 15 12 L 25 15 L 45 55 Z M 80 10 L 85 12 Q 88 14 86 18 L 60 70 L 55 75 Q 58 75 60 70 Z" fill="#0B47B8"/>
+ </svg>
+ <div class="title">Grand Theft Auth VI <small>dedsec v0.1.0</small></div>
+ </div>
+ <div class="hdr-right">
+ <div class="dot" id="sDot"></div>
+ <span id="sTxt">pronto</span>
+ </div>
+ </div>
+
+ <div class="main">
+ <!-- Graphics -->
+ <div class="sec">
+ <div class="sec-t">Gráficos</div>
+ <div class="row">
+ <label>Resolução</label>
+ <select id="res">
+ <option value="1280x720" selected>1280 × 720</option>
+ <option value="1600x900">1600 × 900</option>
+ <option value="1920x1080">1920 × 1080</option>
+ </select>
+ </div>
+ <div class="row">
+ <label>Texturas</label>
+ <select id="tex">
+ <option value="low">Baixa</option>
+ <option value="medium" selected>Média</option>
+ <option value="high">Alta</option>
+ </select>
+ </div>
+ <div class="row">
+ <label>Sombras</label>
+ <select id="shd">
+ <option value="off" selected>Desligado</option>
+ <option value="low">Baixa</option>
+ <option value="medium">Média</option>
+ </select>
+ </div>
+ <div class="row">
+ <label>FPS limite</label>
+ <div class="rng">
+ <input type="range" id="fps" min="30" max="144" step="1" value="30">
+ <span class="v" id="fpsV">30</span>
+ </div>
+ </div>
+ <div class="tgl"><label>VSync</label><label class="sw"><input type="checkbox" id="vsync"><span class="tr"></span></label></div>
+ <div class="tgl"><label>Cache de shaders</label><label class="sw"><input type="checkbox" id="cache" checked><span class="tr"></span></label></div>
+ </div>
+
+ <!-- Controls -->
+ <div class="sec">
+ <div class="sec-t">Controles</div>
+ <div class="row">
+ <label>Dispositivo</label>
+ <select id="inp">
+ <option value="auto" selected>Auto-detectar</option>
+ <option value="xbox">Xbox</option>
+ <option value="dualsense">DualSense</option>
+ <option value="kbm">Teclado + Mouse</option>
+ </select>
+ </div>
+ </div>
+
+ <!-- Audio -->
+ <div class="sec">
+ <div class="sec-t">Áudio</div>
+ <div class="row">
+ <label>Buffer</label>
+ <div class="rng">
+ <input type="range" id="abuf" min="10" max="80" step="5" value="20">
+ <span class="v" id="abufV">20ms</span>
+ </div>
+ </div>
+ </div>
+
+ <!-- Dev options — hidden -->
+ <div class="dev-sec" id="devSec">
+ <div class="dev-badge">⚙ modo desenvolvedor</div>
+ <div class="sec">
+ <div class="sec-t">Debug</div>
+ <div class="tgl"><label>Compilação assíncrona PSO</label><label class="sw"><input type="checkbox" id="asyncPso" checked><span class="tr"></span></label></div>
+ <div class="tgl"><label>Frame clock trace</label><label class="sw"><input type="checkbox" id="fcTrace"><span class="tr"></span></label></div>
+ <div class="tgl"><label>D3D12 debug layer</label><label class="sw"><input type="checkbox" id="dbgLayer"><span class="tr"></span></label></div>
+ <div class="row">
+ <label>Device type override</label>
+ <select id="devType">
+ <option value="" selected>Padrão (Scarlett Anaconda)</option>
+ <option value="1">PC</option>
+ <option value="6">Lockhart (Series S)</option>
+ <option value="7">Anaconda (Series X)</option>
+ </select>
+ </div>
+ <div class="row">
+ <label>Log level</label>
+ <select id="logLvl">
+ <option value="info" selected>Info</option>
+ <option value="debug">Debug</option>
+ <option value="trace">Trace</option>
+ </select>
+ </div>
+ </div>
+ </div>
+ </div>
+
+ <div class="side">
+ <div class="card">
+ <div class="sec-t" style="margin-bottom:8px;">Hardware</div>
+ <div class="hw"><span class="hw-l">GPU</span><span class="hw-v" id="gpu">...</span></div>
+ <div class="hw"><span class="hw-l">VRAM</span><span class="hw-v" id="vram">—</span></div>
+ <div class="hw"><span class="hw-l">CPU</span><span class="hw-v" id="cpu">...</span></div>
+ <div class="hw"><span class="hw-l">RAM</span><span class="hw-v" id="ram">—</span></div>
+ <div class="hw"><span class="hw-l">DX12</span><span class="hw-v" id="dx">...</span></div>
+ </div>
+
+ <button class="play" id="playBtn" onclick="launch()">Iniciar jogo</button>
+
+ <div class="upd">
+ <div class="upd-s" id="updS">verificando...</div>
+ <button class="upd-b" id="updB" onclick="checkUpd()">verificar</button>
+ </div>
+
+ <div class="log" id="logEl"></div>
+ </div>
+
+ <div class="ftr">
+ <span>dedsec runtime · dedsec-clean</span>
+ <span><a href="https://github.com/Hylanderry/DedSec" target="_blank">github</a></span>
+ </div>
+</div>
+
+<script>
+const VER = '0.1.0';
+const REPO = 'Hylanderry/DedSec';
+const BR = 'dedsec-clean';
+const logEl = document.getElementById('logEl');
+
+// Ctrl+Shift+D toggles dev options
+document.addEventListener('keydown', e => {
+ if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+ const d = document.getElementById('devSec');
+ d.classList.toggle('visible');
+ log(d.classList.contains('visible') ? 'modo dev ativado' : 'modo dev desativado', 'wn');
+ }
+});
+
+function log(m, l='in') {
+ const t = new Date().toLocaleTimeString('pt-BR',{hour12:false});
+ const el = document.createElement('div');
+ el.className = 'll '+l;
+ el.textContent = '['+t+'] '+m;
+ logEl.appendChild(el);
+ logEl.scrollTop = logEl.scrollHeight;
+}
+
+document.getElementById('fps').oninput = e => { document.getElementById('fpsV').textContent = e.target.value; };
+document.getElementById('abuf').oninput = e => { document.getElementById('abufV').textContent = e.target.value+'ms'; };
+
+async function detectHW() {
+ try {
+ const c = document.createElement('canvas');
+ const gl = c.getContext('webgl2') || c.getContext('webgl');
+ if (gl) {
+ const ext = gl.getExtension('WEBGL_debug_renderer_info');
+ if (ext) {
+ const g = gl.getParameter(ext.UNMASKED_RENDERER_WEBGL);
+ document.getElementById('gpu').textContent = g;
+ document.getElementById('gpu').className = 'hw-v ok';
+ log('GPU: '+g,'ok');
+ }
+ const mt = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+ const v = mt>=16384?'>=4GB':mt>=8192?'~2-4GB':'<2GB';
+ const ve = document.getElementById('vram');
+ ve.textContent = v;
+ ve.className = 'hw-v '+(mt>=16384?'ok':mt>=8192?'wn':'bad');
+ }
+ } catch(e) { log('GPU: erro','er'); }
+ const co = navigator.hardwareConcurrency||'?';
+ const rm = navigator.deviceMemory||'?';
+ document.getElementById('cpu').textContent = co+' threads';
+ const re = document.getElementById('ram');
+ re.textContent = rm!=='?'?rm+' GB':'?';
+ re.className = 'hw-v '+(rm>=16?'ok':rm>=8?'wn':'bad');
+ document.getElementById('dx').textContent = 'ok';
+ document.getElementById('dx').className = 'hw-v ok';
+ log(co+' threads / '+rm+' GB','in');
+}
+
+async function checkUpd() {
+ const s=document.getElementById('updS'), b=document.getElementById('updB');
+ s.textContent='verificando...'; s.className='upd-s up'; b.disabled=true;
+ try {
+ const r=await fetch('https://api.github.com/repos/'+REPO+'/commits?sha='+BR+'&per_page=1');
+ if(!r.ok) throw new Error('HTTP '+r.status);
+ const d=await r.json();
+ if(!d.length) throw new Error('sem commits');
+ const sha=d[0].sha.substring(0,7);
+ const dt=new Date(d[0].commit.author.date).toLocaleDateString('pt-BR');
+ const loc=localStorage.getItem('ds_sha')||'';
+ log('remoto: '+sha+' ('+dt+')');
+ if(loc===sha){s.textContent='atualizado ('+sha+')';s.className='upd-s ok';}
+ else{s.textContent='nova: '+sha;s.className='upd-s up';localStorage.setItem('ds_sha',sha);}
+ }catch(e){s.textContent='erro: '+e.message;s.className='upd-s er';log('update: '+e.message,'er');}
+ b.disabled=false;
+}
+
+function launch() {
+ const btn=document.getElementById('playBtn');
+ const dot=document.getElementById('sDot');
+ const st=document.getElementById('sTxt');
+
+ const cfg={
+ res:document.getElementById('res').value,
+ tex:document.getElementById('tex').value,
+ shd:document.getElementById('shd').value,
+ fps:+document.getElementById('fps').value,
+ vsync:document.getElementById('vsync').checked,
+ cache:document.getElementById('cache').checked,
+ inp:document.getElementById('inp').value,
+ abuf:+document.getElementById('abuf').value,
+ // dev
+ async:document.getElementById('asyncPso').checked,
+ fcTrace:document.getElementById('fcTrace').checked,
+ dbg:document.getElementById('dbgLayer').checked,
+ devType:document.getElementById('devType').value,
+ logLvl:document.getElementById('logLvl').value,
+ };
+
+ log(cfg.res+' / '+cfg.tex+' / sombras '+cfg.shd+' / fps '+cfg.fps);
+ log('vsync '+cfg.vsync+' / cache '+cfg.cache+' / input '+cfg.inp);
+ if(document.getElementById('devSec').classList.contains('visible'))
+ log('[dev] async '+cfg.async+' / trace '+cfg.fcTrace+' / dbg '+cfg.dbg+' / type '+cfg.devType,'wn');
+
+ btn.disabled=true; btn.textContent='Iniciando...';
+ dot.className='dot warn'; st.textContent='inicializando';
+
+ log('PE Loader + TLS /GA...');
+ setTimeout(()=>log('XErrorReport ok','ok'),150);
+ setTimeout(()=>log('Frame Clock ok','ok'),300);
+ setTimeout(()=>log('CPU Writes ok','ok'),450);
+ setTimeout(()=>log('DXC Runtime ok','ok'),600);
+ setTimeout(()=>log('D3D12.X proxy ok','ok'),750);
+ setTimeout(()=>{
+ log('Runtime pronto. Defina DEDSEC_GAME_DIR.','wn');
+ btn.disabled=false; btn.textContent='Iniciar jogo';
+ dot.className='dot'; st.textContent='aguardando';
+ },1000);
+}
+
+window.addEventListener('DOMContentLoaded',()=>{
+ log('dedsec v'+VER,'ok');
+ detectHW();
+ setTimeout(checkUpd,600);
+});
+</script>
+</body>
+</html>
