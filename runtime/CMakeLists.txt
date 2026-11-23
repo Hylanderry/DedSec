@@ -296,6 +296,8 @@ if(WIN32)
   add_executable(dedsec_rt
     src/main.cpp
     src/pe_loader.cpp
+    src/dedsec_frame_clock.cpp
+    src/dedsec_cpu_writes.cpp
     shims/registry.cpp
     shims/xmem.cpp
     shims/d3d12_xs.cpp
