@@ -220,6 +220,64 @@ if(WIN32)
   target_compile_options(xbox_input_adapter_test PRIVATE /W4 /permissive- /utf-8)
   add_test(NAME xbox_input_adapter COMMAND xbox_input_adapter_test)
 
+  # ── Sprint 4: GameInput / KBM Mapping Layer ────────────────────────────────
+  # High-level input manager: RawInput + XInput merge, lock-free ring buffer,
+  # WASD+mouse → virtual controller, hot-plug detection.
+  add_library(dedsec_gameinput STATIC
+    shims/gameinput.cpp
+  )
+  target_include_directories(dedsec_gameinput PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/shims)
+  target_compile_definitions(dedsec_gameinput PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(dedsec_gameinput PRIVATE /W4 /permissive- /utf-8)
+  target_link_libraries(dedsec_gameinput PRIVATE dedsec_xbox_input hid)
+
+  # GameInput unit test (ring buffer, event push/pop, KBM mapping)
+  add_executable(gameinput_test
+    test/gameinput_test.cpp
+  )
+  target_link_libraries(gameinput_test PRIVATE dedsec_gameinput)
+  target_compile_definitions(gameinput_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(gameinput_test PRIVATE /W4 /permissive- /utf-8)
+  add_test(NAME gameinput COMMAND gameinput_test)
+
+  # ── Sprint 4: XAudio2 Full Implementation ──────────────────────────────────
+  # Complete audio engine: voice pool (64 voices), 3D spatial audio with
+  # Doppler/attenuation, codec stubs (ADPCM/XMA2/Opus), WASAPI output.
+  add_library(dedsec_xaudio2_full STATIC
+    shims/xaudio2_full.cpp
+  )
+  target_include_directories(dedsec_xaudio2_full PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/shims)
+  target_compile_definitions(dedsec_xaudio2_full PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(dedsec_xaudio2_full PRIVATE /W4 /permissive- /utf-8)
+
+  # XAudio2 Full unit test (voice pool, playback, 3D audio, stats)
+  add_executable(xaudio2_full_test
+    test/xaudio2_full_test.cpp
+  )
+  target_link_libraries(xaudio2_full_test PRIVATE dedsec_xaudio2_full)
+  target_compile_definitions(xaudio2_full_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(xaudio2_full_test PRIVATE /W4 /permissive- /utf-8)
+  add_test(NAME xaudio2_full COMMAND xaudio2_full_test)
+
+  # ── Sprint 4: Bink 2 Video Decoder ─────────────────────────────────────────
+  # Clean-room container parser + streaming decoder for .bik/.bk2 files.
+  # Synthetic gradient frames (codec stub), audio extraction, decode stats.
+  add_library(dedsec_bink2_decoder STATIC
+    src/bink2_decoder.cpp
+  )
+  target_include_directories(dedsec_bink2_decoder PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_compile_definitions(dedsec_bink2_decoder PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(dedsec_bink2_decoder PRIVATE /W4 /permissive- /utf-8)
+
+  # Bink2 Decoder unit test (container parsing, frame decode, audio extract)
+  add_executable(bink2_decoder_test
+    test/bink2_decoder_test.cpp
+  )
+  target_link_libraries(bink2_decoder_test PRIVATE dedsec_bink2_decoder)
+  target_compile_definitions(bink2_decoder_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(bink2_decoder_test PRIVATE /W4 /permissive- /utf-8)
+  add_test(NAME bink2_decoder COMMAND bink2_decoder_test)
+
   # DedSec GDeflate Decompressor — Xbox Series asset compression format
   add_library(dedsec_gdeflate STATIC
     shims/gdeflate_decompressor.cpp
@@ -371,6 +429,25 @@ if(WIN32)
   target_compile_options(texture_tiling_test PRIVATE /W4 /permissive- /utf-8)
   add_test(NAME texture_tiling COMMAND texture_tiling_test)
 
+  # DedSec PresentX Bridge — Xbox PresentX → DXGI Present translation
+  add_library(dedsec_presentx_bridge STATIC
+    src/presentx_bridge.cpp
+  )
+  target_include_directories(dedsec_presentx_bridge PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_compile_definitions(dedsec_presentx_bridge PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(dedsec_presentx_bridge PRIVATE /W4 /permissive- /utf-8)
+  target_link_libraries(dedsec_presentx_bridge PRIVATE d3d12 dxgi)
+
+  # DedSec PresentX Bridge unit test (synthetic COM stubs, no GPU/window required)
+  add_executable(presentx_bridge_test
+    test/presentx_bridge_test.cpp
+    src/dedsec_frame_clock.cpp
+  )
+  target_link_libraries(presentx_bridge_test PRIVATE dedsec_presentx_bridge)
+  target_compile_definitions(presentx_bridge_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(presentx_bridge_test PRIVATE /W4 /permissive- /utf-8)
+  add_test(NAME presentx_bridge COMMAND presentx_bridge_test)
+
   # DedSec VFS Layer — path mapping, overlay support, archive integration
   add_library(dedsec_vfs STATIC
     src/vfs.cpp
@@ -396,7 +473,7 @@ if(WIN32)
   target_compile_options(dedsec_rt PRIVATE /W4 /permissive- /utf-8)
   # Static shim tables register themselves at startup; keep the linker from dropping their objects.
   target_link_options(dedsec_rt PRIVATE /OPT:NOREF)
-  target_link_libraries(dedsec_rt PRIVATE dedsec_rt_d3d12_xs_rootsig dedsec_rt_xtaskqueue dedsec_kernelx dedsec_rpf9_reader dedsec_vfs dedsec_fsr3 dedsec_gpu_tier dedsec_shader_cache dedsec_pso_warmup dedsec_async_compute dedsec_occlusion_cull dedsec_vrs dedsec_rdna2_translator dedsec_dxc_compiler dedsec_rdna2_mimg dedsec_xbox_input dedsec_gdeflate dedsec_xaudio2 dedsec_rdna2_flat_mubuf dedsec_rdna2_dpp_smem dedsec_rdna2_vop3 dedsec_rdna2_sdwa dedsec_rdna2_vop1_vop2 dedsec_rdna2_sop dedsec_rdna2_vintrp_exp_mtbuf_vop3p psapi)
+  target_link_libraries(dedsec_rt PRIVATE dedsec_rt_d3d12_xs_rootsig dedsec_rt_xtaskqueue dedsec_kernelx dedsec_rpf9_reader dedsec_vfs dedsec_fsr3 dedsec_gpu_tier dedsec_shader_cache dedsec_pso_warmup dedsec_async_compute dedsec_occlusion_cull dedsec_vrs dedsec_rdna2_translator dedsec_dxc_compiler dedsec_rdna2_mimg dedsec_xbox_input dedsec_gameinput dedsec_gdeflate dedsec_xaudio2 dedsec_xaudio2_full dedsec_bink2_decoder dedsec_rdna2_flat_mubuf dedsec_rdna2_dpp_smem dedsec_rdna2_vop3 dedsec_rdna2_sdwa dedsec_rdna2_vop1_vop2 dedsec_rdna2_sop dedsec_rdna2_vintrp_exp_mtbuf_vop3p dedsec_presentx_bridge dedsec_uma_allocator dedsec_texture_tiling psapi)
 
   # Root-signature forwarding test: needs a real PC d3d12.lib to serialize the synthetic descriptors.
   # find_library searches %LIB% (a Developer Prompt), not the Windows SDK the Visual Studio generator links
