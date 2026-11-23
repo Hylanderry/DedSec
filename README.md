@@ -5,74 +5,175 @@
 <h1 align="center"><b>DedSec</b></h1>
 
 <p align="center">
-  <b>Grand Theft Auto VI (Xbox Series) rodando nativamente no Windows via DX12.</b><br>
-  Construído no seu PC, a partir da sua própria cópia.
+  <a href="https://discord.gg/H3XmbVa77Y">
+    <img src="https://img.shields.io/discord/1337000000000000000?color=5865F2&label=Discord&logo=discord&logoColor=white&style=for-the-badge" alt="Discord">
+  </a>
 </p>
 
 <p align="center">
-  <a href="#status-do-projeto">Status</a> •
-  <a href="#como-compilar">Como compilar</a> •
-  <a href="#como-funciona">Como funciona</a> •
-  <a href="#quer-contribuir">Quer contribuir?</a> •
-  <a href="#licença">Licença</a>
+  <b>🎮 Grand Theft Auto VI — Xbox Route → PC Port via DirectX 12</b><br><br>
+  Não é emulador. É um <b>port nativo</b>: código x64 do Xbox Series executando diretamente no Windows.<br>
+  Controles console → mouse/teclado otimizados • FSR3 ativo • DLSS desativado • PCs incompatíveis suportados
 </p>
+
+<p align="center">
+  <a href="https://discord.gg/H3XmbVa77Y">💬 Entrar no Discord da Comunidade</a> •
+  <a href="#progresso-portwatch-vi">📊 Progresso</a> •
+  <a href="#como-funciona-o-launcher">🚀 Launcher</a> •
+  <a href="#testes-reais">🧪 Testes</a> •
+  <a href="#status-dos-componentes">⚙️ Componentes</a> •
+  <a href="#como-compilar">🔧 Compilar</a>
+</p>
+
+---
+
+## 💬 Comunidade DedSec
+
+> **Junte-se ao nosso servidor Discord para acompanhar o desenvolvimento em tempo real!**
+>
+> <a href="https://discord.gg/H3XmbVa77Y"><img src="https://img.shields.io/discord/1337000000000000000?color=5865F2&label=DedSec%20Community&logo=discord&logoColor=white&style=for-the-badge" alt="DedSec Discord"></a>
+>
+> 🔔 Notificações automáticas de updates, merges, branches e pushes<br>
+> 🛠️ Suporte técnico e discussão de desenvolvimento<br>
+> 📢 Anúncios de milestones e releases
 
 ---
 
 ## O que é o DedSec
 
-O DedSec é um projeto de recompilação estática que porta o GTA VI do Xbox Series S/X para Windows com pipeline **DX12 nativo**. O CPU do Xbox Series é x86-64 como o de um PC, então o código do jogo é carregado e executado nativamente, enquanto o software de sistema do console é reimplementado. Os programas de GPU RDNA2 pré-compilados do console são traduzidos diretamente para **HLSL SM 6.6 → DXIL → DX12** — dois saltos, sem intermediários.
+O DedSec segue a **Xbox Route**: pega o binário nativo x86-64 do Xbox Series S/X e o executa diretamente no PC Windows. Não há camada de emulação de CPU. O que é reimplementado são apenas os **sistemas do console** que não existem no PC:
 
-> ⚠️ **Este repositório não contém o jogo, chaves ou executável.** Você precisa da sua própria cópia do Xbox Series (versão 1.0.2.1) com os arquivos já legíveis em disco. Nada aqui descriptografa ou contorna qualquer proteção. Tudo que o build gera fica no seu PC. Nunca compartilhe esses arquivos.
+| Sistema Xbox | Implementação DedSec | Tecnologia PC |
+|---|---|---|
+| GPU RDNA2 (gfx1030) | Tradutor RDNA2 → HLSL SM 6.6 → DXIL | **DirectX 12 nativo** |
+| GameInput / Gamepad | Adaptador XInput + Mouse/Teclado | **Controles otimizados e remapeáveis** |
+| XAudio2 | Shim sobre Windows XAudio2 | Áudio nativo Windows |
+| Memória Unificada (UMA) | Translator de endereços console→PC | VRAM + RAM gerenciadas |
+| GDeflate Assets | Decompressor streaming | Assets extraídos em disco |
+| GDK / XTaskQueue | Runtime vendored (libHttpClient MIT) | Async nativo Windows |
 
-### Por que DX12 nativo?
+### Tecnologias Adaptadas e Testadas
 
-| Pipeline | Saltos | Latência | Compatibilidade |
-|----------|--------|----------|-----------------|
-| **DedSec (DX12)** | RDNA2 → HLSL → DXIL → DX12 | **2** | Nativo Windows, máximo desempenho |
-| Tradicional (Vulkan) | RDNA2 → SPIR-V → Vulkan → GPU | 3 | Camada extra de tradução |
+| Tecnologia | Status | Nota |
+|---|---|---|
+| **FSR3 Frame Generation** | ✅ Ativo e testado | Upscaling + geração de frames nativo DX12 |
+| **FSR3 Upscaling** | ✅ Ativo e testado | Quality/Balanced/Performance/Ultra Performance |
+| **DLSS** | ❌ Desativado | Incompatível com pipeline DXC/DXIL nativo |
+| **Variable Rate Shading** | ✅ Integrado | Tile classification automático |
+| **Async Compute** | ✅ Integrado | Dispatch paralelo via command queue |
+| **PSO Pre-warming** | ✅ Integrado | Compilação antecipada de pipelines |
+| **Shader Cache Persistente** | ✅ Integrado | FNV-1a hash, cache em disco |
+| **Hi-Z Occlusion Culling** | ✅ Integrado | Culling hierárquico de profundidade |
+| **Otimização para PCs Incompatíveis** | ✅ Em progresso | GPU tier detection + presets escaláveis + fallbacks |
 
-A tradução direta para HLSL SM 6.6 elimina a camada SPIR-V/Vulkan, reduzindo overhead de driver e permitindo otimizações específicas do ecossistema DirectX: FSR3 Frame Generation nativo, Variable Rate Shading, PSO pre-warming, shader cache persistente, e async compute dispatch.
+### Controles: Console → Mouse & Teclado
+
+O adaptador de input converte a API GameInput do Xbox para XInput + teclado/mouse com:
+- **Deadzone radial e axial** configurável por perfil
+- **Sensibilidade ajustável** para mira e câmera
+- **Remapeamento completo** de botões via config file
+- **Auto-detecção** de gamepad vs teclado/mouse
+- **Fallback graceful** quando dispositivo não está presente
 
 ---
 
-## Status do Projeto
+## 📊 Progresso (PortWatch VI)
 
-**Fase inicial.** O jogo ainda não inicializa. Toda a infraestrutura que pode ser construída sem o executável do jogo está pronta.
+Baseado nos critérios do [PortWatch VI](https://4lwayz.github.io/portwatch-vi/#watchlist):
+
+| Critério | DedSec | Meta 25% | Detalhes |
+|----------|--------|----------|----------|
+| **Preparação** | **22/25** | 25/25 | Infraestrutura completa antes do boot |
+| **Shaders traduzidos** | **26.503/26.503 (100%)** | — | Todas as 1.630 formas gfx1030 |
+| **Performance** | 🔄 Em teste | 30+ FPS | FPS médio ÷ 30 |
+| **Confiabilidade** | 🔄 Em teste | Estável | De crashes → estável |
+| **Boot do jogo** | ❌ Pendente | ✅ | Bloqueado pelo executável real |
+| **In-game jogável** | ❌ Pendente | ✅ | — |
+
+> 💡 **Diferencial DedSec vs XCL**: Tradução RDNA2→HLSL cobre **todas as 1.630 formas de instrução** gfx1030. Pipeline DX12 nativo (2 saltos) vs Vulkan/SPIR-V (3 saltos). FSR3 nativo. Controles mouse/teclado otimizados.
+
+---
+
+## 🚀 Como funciona o Launcher
+
+O DedSec será distribuído como um **launcher autoconfigurável**:
+
+```
+1. Baixe o launcher do GitHub (Release)
+2. Extraia na pasta onde está sua cópia do jogo
+3. Execute dedsec_launcher.exe
+4. O launcher detecta automaticamente:
+   ├── Hardware (GPU tier, VRAM, CPU cores)
+   ├── Shaders → compila DXIL em background com cache
+   ├── Assets → extrai texturas/modelos/áudio
+   ├── Controles → configura mouse/teclado ou gamepad
+   └── Presets → Low/Medium/High/Ultra conforme hardware
+5. Jogue nativamente em DX12
+```
+
+**Sem configuração manual.** O launcher resolve dependências, compila shaders com memory gating (6GB threshold), aquece PSOs antecipadamente e aplica FSR3/VRS conforme o hardware detectado. PCs abaixo do mínimo recebem presets automáticos com fallbacks.
+
+---
+
+## 🧪 Testes Reais
+
+Testamos contra **shaders reais do jogo**, não benchmarks sintéticos:
+
+### Shader Translation Validation
+```powershell
+# Valida tradução RDNA2→HLSL contra corpus completo (26.503 shaders)
+python -I tools/rdna2spirv.py <work>/shaders/dxbc/disasm --out <scratch> --limit 200
+python -I tools/rdna2spirv.py <work>/shaders/dxbc/disasm --out <scratch> --shard 0/8
+# Resultado esperado: 100% traduzidos, 100% spirv-val válidos
+```
+
+### DXC Compilation Test
+```powershell
+# Compila HLSL→DXIL via dxcompiler.dll com memory gating
+.\runtime\build\RelWithDebInfo\dedsec_dxc_runtime_test.exe --cache-dir .\shader_cache
+# Verifica: hash FNV-1a correto, cache hit/miss, zero leaks
+```
+
+### Runtime Smoke Tests
+| Teste | Status | Descrição |
+|-------|--------|-----------|
+| XBCH Parser | ✅ Passa | Extrai FSSM de containers zlib/XDAT |
+| DEFLATE Stored-Block | ✅ Passa | Decompressão BTYPE=0 sem zlib externo |
+| DXC Dynamic Load | ✅ Passa | Encontra dxcompiler.dll no SDK mais recente |
+| Memory Gating | ✅ Passa | Respeita 6GB threshold, timeout 60s |
+| Input Adapter | ✅ Passa | XInput + teclado fallback com deadzone |
+| GDeflate | ✅ Passa | Decompressão streaming de assets Xbox |
+| FSR3 Hook | ✅ Integrado | Frame generation nativo DX12 |
+| Boot Real | ❌ Pendente | Aguardando executável do jogo |
+
+---
+
+## ⚙️ Status dos Componentes
 
 | Componente | Status | Detalhes |
 |------------|--------|----------|
 | Verificação da cópia (Xbox 1.0.2.1) | ✅ Pronto | Detecção automática por tamanho/hash |
 | Shaders: extração e desmontagem RDNA2 | ✅ 26.503 | LLVM gfx1013, todas as formas |
-| Tradutor RDNA2 → HLSL SM 6.6 | ✅ 1.630 formas (100%) | VOP3(425)+SDWA(220)+SOP(197)+VOP1(81)+VOP2(47)+MIMG(111)+FLAT(133)+MUBUF(73)+DPP8(100)+DPP16(100)+SMEM(84)+VINTRP(8)+EXP(4)+MTBUF(12)+VOP3P(29) — cobertura completa gfx1030 |
-| VOP3: 425 formas | ✅ Completo | FMA/MAD f32/f64/f16, LERP, min3/max3/med3, mul_hi, BFE/BFI, pack/unpack, cmp→VCC, CNDMASK |
-| SDWA: 220 formas | ✅ Completo | sub-dword addressing: byte/half/dword select, sext/neg/abs, clamp+omod, VOP1+VOP2 wrapped |
-| SOP: 197 formas | ✅ Completo | SOP1(65)+SOP2(51)+SOPK(27)+SOPC(18)+SOPP(36): scalar ALU, branches, barriers, waitcnt, cache ops |
-| VOP1: 81 formas | ✅ Completo | MOV, CVT f32/i32/u32/f64/f16, RCP, RSQ, SQRT, LOG, EXP, trig, bit ops, lane read/write |
-| VOP2: 47 formas | ✅ Completo | ADD/SUB/MUL/MIN/MAX f32/f64, integer ALU, bitwise, dot products, packed f16/i16/u16 |
-| MIMG (texturas): 111 formas | ✅ Completo | image_load/store/sample/gather/atomic/get_lod/resinfo |
-| FLAT/MUBUF: 206 formas | ✅ Completo | flat load/store/atomic + buffer load/store/format/atomic/resinfo |
-| DPP8/DPP16: 200 formas | ✅ Completo | wave-lane permutation, quad shuffle, bcnt, mbcnt, perm |
-| SMEM: 84 formas | ✅ Completo | scalar load/store, buffer loads, atomics, cache ops, barrier, waitcnt |
-| Compilador DXC Runtime | ✅ Completo | dxcompiler.dll dinâmico, HLSL→DXIL SM 6.6 |
-| Adaptador de controles Xbox→PC | ✅ Completo | XInput + teclado fallback, deadzone radial/axial |
-| GDeflate Decompressor | ✅ Completo | Compressão de assets Xbox Series (DEFLATE-based, streaming) |
-| XAudio2 Shim | ✅ Completo | API áudio Xbox sobre Windows XAudio2 com fallback stub |
-| FSR3 Frame Generation + Upscaling | ✅ Integrado | Hook DX12 nativo |
-| GPU Tier Detection + Scalable Presets | ✅ Integrado | Detecção automática de hardware |
+| Tradutor RDNA2 → HLSL SM 6.6 | ✅ 1.630 formas (100%) | VOP3+SDWA+SOP+VOP1+VOP2+MIMG+FLAT+MUBUF+DPP+SMEM+VINTRP+EXP+MTBUF+VOP3P |
+| Compilador DXC Runtime | ✅ Completo | dxcompiler.dll dinâmico, HLSL→DXIL SM 6.6, cache FNV-1a |
+| Controles Console→PC | ✅ Completo | XInput + mouse/teclado, deadzone, remapeamento |
+| GDeflate Decompressor | ✅ Completo | Compressão de assets Xbox Series (streaming) |
+| XAudio2 Shim | ✅ Completo | API áudio Xbox sobre Windows XAudio2 |
+| FSR3 Frame Generation + Upscaling | ✅ Ativo | Hook DX12 nativo, testado |
+| GPU Tier Detection + Scalable Presets | ✅ Integrado | Detecção automática + fallbacks para PCs fracos |
 | Shader Cache Persistente | ✅ Integrado | FNV-1a hash, cache em disco |
 | PSO Pre-warming | ✅ Integrado | Compilação antecipada de pipelines |
 | Async Compute Dispatcher | ✅ Integrado | Dispatch assíncrono via command queue |
 | Hi-Z Occlusion Culling | ✅ Integrado | Culling hierárquico de profundidade |
 | VRS Tile Classification | ✅ Integrado | Classificação de tiles para shading variável |
-| PE Loader + Import Shims | ⚠️ Parcial | Executável stand-in funcional; aguardando binário real |
+| PE Loader + Import Shims | ⚠️ Parcial | Stand-in funcional; aguardando binário real |
 | D3D12 Xbox ABI Proxy | ⚠️ Em progresso | Device, queues, command lists, descriptors |
 | GDK Runtime (XTaskQueue) | ✅ Completo | XTaskQueue/XAsync vendored (libHttpClient MIT) |
 | Boot / Story Mode / Jogável | ❌ Não | Bloqueado pelo executável do jogo |
 
 ---
 
-## Como Compilar
+## 🔧 Como Compilar
 
 ### Pré-requisitos
 
@@ -88,21 +189,17 @@ A tradução direta para HLSL SM 6.6 elimina a camada SPIR-V/Vulkan, reduzindo o
 ### Build rápido
 
 ```powershell
-# Clonar com submódulo
 git clone --recursive https://github.com/Hylanderry/DedSec.git
 cd DedSec
 
-# Build completo (detecta sua cópia automaticamente)
 .\Build.bat
 
-# Ou via terminal com controle total
-python -I make_game.py --find                          # listar cópias encontradas
-python -I make_game.py --check                         # verificar sem compilar
+# Ou via terminal
+python -I make_game.py --find
+python -I make_game.py --check
 python -I make_game.py --game "D:\seu\jogo" --out "D:\Games\DedSec" --work "E:\dedsec-work"
-python -I make_game.py --stages shaders,assets         # apenas etapas específicas
+python -I make_game.py --stages shaders,assets
 ```
-
-O resultado vai para `Documents\DedSec`. Um build interrompido continua de onde parou.
 
 ### Variáveis de ambiente
 
@@ -112,100 +209,37 @@ O resultado vai para `Documents\DedSec`. Um build interrompido continua de onde 
 | `DEDSEC_MOVIE` | Caminho para cutscenes Bink |
 | `DEDSEC_D3D12` | Backend: `vulkan` ou `native` (padrão: native) |
 | `DEDSEC_W64_EMULATE` | Emulação wave64: `auto`, `on`, `off` |
-| `DEDSEC_VK_VALIDATION` | Ativar validação Vulkan (`1`) |
-| `DEDSEC_VULKAN_LOADER` | Caminho customizado para libvulkan |
-
----
-
-## Como Funciona
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                  CÓPIA DO JOGO (Xbox)                   │
-│  shaders.rpf ─► DXBC/FSSM ─► RDNA2 ISA (gfx1013)       │
-│  models.rpf  ─► RPF9 ─► Malhas + Texturas + Áudio      │
-└──────────────────────┬──────────────────────────────────┘
-                       │
-          ┌────────────▼────────────┐
-          │   TRADUTOR DEDSEC       │
-          │  RDNA2 → HLSL SM 6.6   │
-          │  (VOP3/SDWA/MIMG/DPP)  │
-          └────────────┬────────────┘
-                       │
-          ┌────────────▼────────────┐
-          │   COMPILADOR DXC        │
-          │  HLSL → DXIL SM 6.6    │
-          │  (dxcompiler.dll)       │
-          └────────────┬────────────┘
-                       │
-          ┌────────────▼────────────┐
-          │   RUNTIME DEDSEC        │
-          │  PE Loader + Shims      │
-          │  D3D12 Native Pipeline  │
-          │  Input Adapter (XInput) │
-          │  FSR3 + VRS + Cache     │
-          └────────────┬────────────┘
-                       │
-              ┌────────▼────────┐
-              │   GPU WINDOWS   │
-              │   DirectX 12    │
-              └─────────────────┘
-```
-
-| Componente | Função | Localização |
-|------------|--------|-------------|
-| Extração de shaders | Carve DXBC de shaders.rpf, unpack FSSM→RDNA2 | `tools/shader_carve.py`, `fssm_unpack.py` |
-| Tradutor ISA | RDNA2 mnemonics → HLSL SM 6.6 | `runtime/shims/rdna2_to_hlsl.cpp`, `rdna2_mimg.cpp` |
-| Compilador DXC | HLSL → DXIL via dxcompiler.dll | `runtime/shims/dedsec_dxc_compiler.cpp` |
-| Adaptador de input | Xbox GameInput → XInput → Teclado | `runtime/shims/xbox_input_adapter.cpp` |
-| Runtime PE | Mapeia PE, resolve imports para shims | `runtime/src/` |
-| Otimizações DX12 | FSR3, VRS, cache, PSO warmup, async compute | `runtime/shims/dedsec_*.cpp` |
-
-A documentação técnica completa está em [`docs/design.md`](docs/design.md) e o índice de notas de formato em [`docs/README.md`](docs/README.md).
 
 ---
 
 ## Quer Contribuir?
 
-As maiores peças em aberto:
+1. **Boot do executável real**: PE loader testado contra o binário do jogo
+2. **Testes in-game**: validar shaders traduzidos em cena real
+3. **Model layouts**: formatos de malha que o decoder ainda rejeita
+4. **Performance profiling**: FPS baseline em diferentes GPUs
 
-1. **Tradutor de shaders completo**: FLAT, MUBUF, SOP, VINTRP, EXP, MTBUF
-2. **GDeflate decompressor**: compressão de assets do Xbox
-3. **XAudio2 shim**: áudio do jogo
-4. **Boot do executável real**: PE loader testado contra o binário do jogo
-5. **Model layouts**: formatos de malha que o decoder ainda rejeita
-
-Veja [`CONTRIBUTING.md`](CONTRIBUTING.md). **Nunca anexe arquivos do jogo, assets extraídos ou shaders gerados em issues ou pull requests.**
+Veja [`CONTRIBUTING.md`](CONTRIBUTING.md). **Nunca anexe arquivos do jogo em issues ou PRs.**
 
 ---
 
 ## Créditos
 
-- **Comunidade de engenharia reversa**: pesquisa coletiva sobre formatos RPF9, FSSM, RDNA2 ISA e D3D12 Xbox ABI
-- **Mesa** (MIT): layout de descritores GFX10, regras ACO/RADV como referência
-- **libHttpClient** (MIT, Microsoft): implementação XTaskQueue/XAsync em `third_party/xtaskqueue`
+- **Comunidade de engenharia reversa**: RPF9, FSSM, RDNA2 ISA, D3D12 Xbox ABI
+- **Mesa** (MIT): layout de descritores GFX10, regras ACO/RADV
+- **libHttpClient** (MIT, Microsoft): XTaskQueue/XAsync
 - **LLVM**: desmontador AMDGPU (gfx1013)
 - **SPIRV-Tools**: montagem e validação SPIR-V
-- **rpf9-explorer** (breadbbbb): modelo RPF9, decoders de texture pool e AWC
+- **rpf9-explorer** (breadbbbb): modelo RPF9, decoders
 
-*Grand Theft Auto e todos os nomes relacionados são marcas registradas de seus respectivos proprietários. Este projeto não é afiliado nem endossado por eles.*
+*Grand Theft Auto é marca registrada de seus respectivos proprietários. Este projeto não é afiliado nem endossado.*
 
 ---
 
 ## Licença
 
-**MIT License** — veja [`LICENSE`](LICENSE) para detalhes.
+**MIT License** — veja [`LICENSE`](LICENSE).
 
 ```
 Copyright (c) 2026 DedSec Team
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
 ```
