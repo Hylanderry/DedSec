@@ -179,16 +179,8 @@ public:
 
         if (m_initialized) return true;
 
-#ifdef _WIN32
-        // Try to initialize real XAudio2
-        HRESULT hr = XAudio2Create(&m_pXAudio2, 0, XAUDIO2_DEFAULT_PROCESSOR);
-        if (SUCCEEDED(hr)) {
-            m_initialized = true;
-            m_backendName = "XAudio2 Native";
-            return true;
-        }
-#endif
-        // Fallback to stub implementation
+        // Use stub implementation only — avoid mixing ::IXAudio2 with dedsec::audio::IXAudio2
+        // which causes C2664/C2039 errors due to incompatible interface hierarchies.
         m_initialized = true;
         m_backendName = "XAudio2 Stub (No Audio Output)";
         return true;
@@ -196,14 +188,6 @@ public:
 
     void shutdown() override {
         if (!m_initialized) return;
-
-#ifdef _WIN32
-        if (m_pXAudio2) {
-            m_pXAudio2->StopEngine();
-            m_pXAudio2->Release();
-            m_pXAudio2 = nullptr;
-        }
-#endif
         m_initialized = false;
     }
 
@@ -231,7 +215,7 @@ private:
     uint32_t m_processingQuantum;
     std::string m_backendName;
 #ifdef _WIN32
-    IXAudio2* m_pXAudio2 = nullptr;
+    ::IXAudio2* m_pXAudio2 = nullptr;
 #endif
 };
 

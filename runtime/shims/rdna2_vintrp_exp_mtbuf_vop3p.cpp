@@ -290,7 +290,7 @@ static std::string pk_src(uint8_t src, bool neg, bool hi) {
  out << "pk_lo(v" << static_cast<int>(src) << ")";
  }
  if (neg) {
- out = std::string("-") + out.str();
+ return std::string("-") + out.str();
  }
  return out.str();
 }

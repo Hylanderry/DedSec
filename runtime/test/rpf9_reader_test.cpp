@@ -50,9 +50,9 @@ static int g_testsFailed = 0;
 
 TEST(JoaatHash_KnownValues) {
     // Known joaat hashes used by RAGE engine
-    // "test" → 0x364F08CF (lowercase)
+    // "test" → 0x3F75CCC1 (verified against CodeWalker/OpenIV reference)
     uint32_t h1 = RPF9Reader::joaatHash("test");
-    ASSERT_EQ(h1, 0x364F08CFu);
+    ASSERT_EQ(h1, 0x3F75CCC1u);
 
     // Case insensitive: "TEST" should equal "test"
     uint32_t h2 = RPF9Reader::joaatHash("TEST");
@@ -339,7 +339,9 @@ TEST(StreamingRead_Callback) {
 
 TEST(StreamingRead_EarlyStop) {
     SyntheticArchive synth;
-    std::vector<uint8_t> payload(4096, 0xCD);
+    // Payload must exceed kChunkSize (64KB) to force multiple read iterations;
+    // otherwise the entire payload arrives in one callback and early-stop can't trigger.
+    std::vector<uint8_t> payload(128 * 1024, 0xCD);
     synth.build({
         {RPF9Reader::joaatHash("stop.dat"), payload},
     });

@@ -97,7 +97,7 @@ static std::string get_hlsl_type(uint8_t dmask) {
 std::string translate_mimg(const MimgInstruction& instr) {
     std::string hlsl;
     char buf[512];
-    const char* swiz = dmask_to_swizzle(instr.dmask).c_str();
+    const std::string swiz = dmask_to_swizzle(instr.dmask);
     const char* type = get_hlsl_type(instr.dmask).c_str();
 
     uint8_t op = static_cast<uint8_t>(instr.opcode);
@@ -108,32 +108,32 @@ std::string translate_mimg(const MimgInstruction& instr) {
             case MimgOpcode::IMAGE_LOAD:
                 std::snprintf(buf, sizeof(buf),
                     "v%u.%s = t%u.Load(int3(v%u.xy, v%u.z)).%s; // image_load",
-                    instr.vdata, swiz, instr.tex, instr.vaddr, instr.vaddr, swiz);
+                    instr.vdata, swiz.c_str(), instr.tex, instr.vaddr, instr.vaddr, swiz.c_str());
                 break;
             case MimgOpcode::IMAGE_LOAD_MIP:
                 std::snprintf(buf, sizeof(buf),
                     "v%u.%s = t%u.Load(int4(v%u.xy, v%u.z, v%u.w)).%s; // image_load_mip",
-                    instr.vdata, swiz, instr.tex, instr.vaddr, instr.vaddr, instr.vaddr, swiz);
+                    instr.vdata, swiz.c_str(), instr.tex, instr.vaddr, instr.vaddr, instr.vaddr, swiz.c_str());
                 break;
             case MimgOpcode::IMAGE_LOAD_PCK:
                 std::snprintf(buf, sizeof(buf),
                     "v%u.%s = t%u.Load(int3(v%u.xy, v%u.z)).%s; // image_load_pck (packed)",
-                    instr.vdata, swiz, instr.tex, instr.vaddr, instr.vaddr, swiz);
+                    instr.vdata, swiz.c_str(), instr.tex, instr.vaddr, instr.vaddr, swiz.c_str());
                 break;
             case MimgOpcode::IMAGE_LOAD_PCK_SGN:
                 std::snprintf(buf, sizeof(buf),
                     "v%u.%s = asfloat(t%u.Load(int3(v%u.xy, v%u.z))).%s; // image_load_pck_sgn",
-                    instr.vdata, swiz, instr.tex, instr.vaddr, instr.vaddr, swiz);
+                    instr.vdata, swiz.c_str(), instr.tex, instr.vaddr, instr.vaddr, swiz.c_str());
                 break;
             case MimgOpcode::IMAGE_LOAD_MIP_PCK:
                 std::snprintf(buf, sizeof(buf),
                     "v%u.%s = t%u.Load(int4(v%u.xy, v%u.z, v%u.w)).%s; // image_load_mip_pck",
-                    instr.vdata, swiz, instr.tex, instr.vaddr, instr.vaddr, instr.vaddr, swiz);
+                    instr.vdata, swiz.c_str(), instr.tex, instr.vaddr, instr.vaddr, instr.vaddr, swiz.c_str());
                 break;
             case MimgOpcode::IMAGE_LOAD_MIP_PCK_SGN:
                 std::snprintf(buf, sizeof(buf),
                     "v%u.%s = asfloat(t%u.Load(int4(v%u.xy, v%u.z, v%u.w))).%s; // image_load_mip_pck_sgn",
-                    instr.vdata, swiz, instr.tex, instr.vaddr, instr.vaddr, instr.vaddr, swiz);
+                    instr.vdata, swiz.c_str(), instr.tex, instr.vaddr, instr.vaddr, instr.vaddr, swiz.c_str());
                 break;
             default:
                 std::snprintf(buf, sizeof(buf), "// TODO: MIMG load op 0x%02X", op);
@@ -148,22 +148,22 @@ std::string translate_mimg(const MimgInstruction& instr) {
             case MimgOpcode::IMAGE_STORE:
                 std::snprintf(buf, sizeof(buf),
                     "t%u.Store(int3(v%u.xy, v%u.z), v%u.%s); // image_store",
-                    instr.tex, instr.vaddr, instr.vaddr, instr.vdata, swiz);
+                    instr.tex, instr.vaddr, instr.vaddr, instr.vdata, swiz.c_str());
                 break;
             case MimgOpcode::IMAGE_STORE_MIP:
                 std::snprintf(buf, sizeof(buf),
                     "t%u.Store(int4(v%u.xy, v%u.z, v%u.w), v%u.%s); // image_store_mip",
-                    instr.tex, instr.vaddr, instr.vaddr, instr.vaddr, instr.vdata, swiz);
+                    instr.tex, instr.vaddr, instr.vaddr, instr.vaddr, instr.vdata, swiz.c_str());
                 break;
             case MimgOpcode::IMAGE_STORE_PCK:
                 std::snprintf(buf, sizeof(buf),
                     "t%u.Store(int3(v%u.xy, v%u.z), asuint(v%u.%s)); // image_store_pck",
-                    instr.tex, instr.vaddr, instr.vaddr, instr.vdata, swiz);
+                    instr.tex, instr.vaddr, instr.vaddr, instr.vdata, swiz.c_str());
                 break;
             case MimgOpcode::IMAGE_STORE_MIP_PCK:
                 std::snprintf(buf, sizeof(buf),
                     "t%u.Store(int4(v%u.xy, v%u.z, v%u.w), asuint(v%u.%s)); // image_store_mip_pck",
-                    instr.tex, instr.vaddr, instr.vaddr, instr.vaddr, instr.vdata, swiz);
+                    instr.tex, instr.vaddr, instr.vaddr, instr.vaddr, instr.vdata, swiz.c_str());
                 break;
             default:
                 std::snprintf(buf, sizeof(buf), "// TODO: MIMG store op 0x%02X", op);
@@ -261,7 +261,7 @@ std::string translate_mimg(const MimgInstruction& instr) {
         if (has_clamp) {
             call += ", float4(0,0,0,0)"; // clamp to border
         }
-        call += ")." + swiz;
+        call += std::string(").") + swiz;
 
         // Add comment with full opcode name
         std::string comment = " // image_sample";
@@ -295,7 +295,7 @@ std::string translate_mimg(const MimgInstruction& instr) {
         if (has_offset) {
             call += ", int2(v" + std::to_string(instr.vaddr) + ".z, 0)";
         }
-        call += ")." + swiz;
+        call += std::string(").") + swiz;
 
         std::string comment = " // image_gather4";
         if (has_compare) comment += "_c";

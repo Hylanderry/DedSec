@@ -133,12 +133,17 @@ bool RPF9Reader::open(const char* path) {
     }
 
     if (!parseHeader()) {
+        // Preserve m_lastError set by parseHeader before close() clears it.
+        const char* err = m_lastError;
         close();
+        m_lastError = err;
         return false;
     }
 
     if (!parseTOC()) {
+        const char* err = m_lastError;
         close();
+        m_lastError = err;
         return false;
     }
 
@@ -159,12 +164,16 @@ bool RPF9Reader::open(const wchar_t* path) {
     }
 
     if (!parseHeader()) {
+        const char* err = m_lastError;
         close();
+        m_lastError = err;
         return false;
     }
 
     if (!parseTOC()) {
+        const char* err = m_lastError;
         close();
+        m_lastError = err;
         return false;
     }
 
@@ -446,7 +455,9 @@ RPF9ReadResult RPF9Reader::readEntryStreaming(const RPF9Entry& entry, StreamCall
             if (bytesRead == 0) return RPF9ReadResult::Error("stream read failed");
 
             if (!callback(chunk, bytesRead)) {
-                return RPF9ReadResult::Ok(totalRead); // Callback requested stop
+                // Callback already accumulated these bytes internally;
+                // include them in our total before returning.
+                return RPF9ReadResult::Ok(totalRead + bytesRead);
             }
 
             totalRead += bytesRead;

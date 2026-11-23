@@ -164,6 +164,7 @@ std::string VirtualFileSystem::normalizePath(const char* path, bool toLower) {
     }
 
     // Strip leading "game:/" or "device:/" prefixes (Xbox virtual drives)
+    // Must run BEFORE collapse so that "game:///data" becomes "data" not "/data"
     const char* prefixes[] = {"game:/", "device:/", "title:/", "update:/"};
     for (const char* prefix : prefixes) {
         size_t plen = std::strlen(prefix);
@@ -179,32 +180,39 @@ std::string VirtualFileSystem::normalizePath(const char* path, bool toLower) {
         }
     }
 
-    // Remove trailing slashes
-    while (!result.empty() && result.back() == '/') {
-        result.pop_back();
-    }
-
-    // Collapse double slashes
-    std::string cleaned;
-    cleaned.reserve(result.size());
+    // Collapse multiple slashes first (handles "game:///data///file" → "data/file")
+    std::string collapsed;
+    collapsed.reserve(result.size());
     bool lastWasSlash = false;
     for (char c : result) {
         if (c == '/') {
-            if (!lastWasSlash) cleaned += c;
+            if (!lastWasSlash) collapsed += c;
             lastWasSlash = true;
         } else {
-            cleaned += c;
+            collapsed += c;
             lastWasSlash = false;
         }
     }
 
+    // Remove leading slash left after prefix strip + collapse
+    if (!collapsed.empty() && collapsed.front() == '/') {
+        collapsed.erase(collapsed.begin());
+    }
+
+    // Remove trailing slashes
+    while (!collapsed.empty() && collapsed.back() == '/') {
+        collapsed.pop_back();
+    }
+
+    result = std::move(collapsed);
+
     if (toLower) {
-        for (char& c : cleaned) {
+        for (char& c : result) {
             c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         }
     }
 
-    return cleaned;
+    return result;
 }
 
 std::string VirtualFileSystem::xboxToPcPath(const char* xboxPath, const std::string& gameDir) {
