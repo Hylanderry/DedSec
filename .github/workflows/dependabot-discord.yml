@@ -1,0 +1,108 @@
+# DedSec — Notificações do Dependabot no Discord
+# Envia um embed formatado em português toda vez que o Dependabot cria ou atualiza um PR.
+#
+# Configuração necessária:
+# 1. No Discord: Server Settings → Integrations → Webhooks → New Webhook
+# 2. Copie a URL do webhook
+# 3. No GitHub: Settings → Secrets and variables → Actions → New repository secret
+#    Name: DISCORD_WEBHOOK_URL
+#    Value: (cole a URL do webhook aqui)
+
+name: Dependabot Discord Notify
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  notify:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extrair informações e enviar para o Discord
+        env:
+          WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "::warning::DISCORD_WEBHOOK_URL não configurada nos secrets do repositório"
+            exit 0
+          fi
+
+          python3 << 'PYEOF'
+          import json, os, re, sys
+          from datetime import datetime, timezone
+          try:
+              from urllib.request import Request, urlopen
+          except ImportError:
+              print("urllib não disponível", file=sys.stderr)
+              sys.exit(1)
+
+          title = os.environ.get("PR_TITLE", "Atualização de dependência")
+          url = os.environ.get("PR_URL", "")
+          author = os.environ.get("PR_AUTHOR", "dependabot[bot]")
+          branch = os.environ.get("PR_BRANCH", "")
+          body = os.environ.get("PR_BODY", "") or ""
+
+          # Extrai versões do título típico do Dependabot
+          m = re.search(r"from\s+([\d.\w\-]+)\s+to\s+([\d.\w\-]+)", title, re.I)
+          old_ver = m.group(1) if m else "desconhecida"
+          new_ver = m.group(2) if m else "desconhecida"
+
+          # Tipo de atualização
+          if "github-actions" in title.lower() or "github-actions" in branch:
+              upd_type = "⚙️ GitHub Action"
+          elif "submodule" in title.lower() or "submodule" in branch:
+              upd_type = "📁 Submódulo"
+          else:
+              upd_type = "📦 Dependência"
+
+          # Severidade
+          bl = body.lower()
+          if "security" in bl or "cve" in bl:
+              severity = "🔴 Segurança"
+              color = 15158332  # vermelho
+          elif "breaking" in bl or "major" in bl:
+              severity = "🟡 Atenção"
+              color = 16776960  # amarelo
+          else:
+              severity = "🟢 Rotina"
+              color = 5814783   # verde/azul
+
+          preview = body[:400].replace("\r\n", "\n").replace("\n", " ")
+          if len(body) > 400:
+              preview += "…"
+
+          payload = {
+              "embeds": [{
+                  "title": "🔄 Nova Atualização Detectada",
+                  "description": f"**{title}**\n\n{upd_type} | {severity}",
+                  "url": url,
+                  "color": color,
+                  "fields": [
+                      {"name": "📌 Versão Anterior", "value": f"`{old_ver}`", "inline": True},
+                      {"name": "🆕 Nova Versão", "value": f"`{new_ver}`", "inline": True},
+                      {"name": "🌿 Branch", "value": f"`{branch}`", "inline": True},
+                      {"name": "📝 Detalhes", "value": preview or "Sem descrição adicional."}
+                  ],
+                  "footer": {"text": "DedSec Auto-Update • Gerado automaticamente"},
+                  "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+              }]
+          }
+
+          data = json.dumps(payload).encode("utf-8")
+          req = Request(os.environ["WEBHOOK_URL"], data=data, headers={"Content-Type": "application/json"})
+          try:
+              resp = urlopen(req)
+              print(f"✅ Notificação enviada (HTTP {resp.status})")
+          except Exception as e:
+              print(f"::error::Falha ao enviar: {e}", file=sys.stderr)
+              sys.exit(1)
+          PYEOF
