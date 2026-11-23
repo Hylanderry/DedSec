@@ -77,6 +77,20 @@ HRESULT __stdcall XSystemGetConsoleId(size_t size, char* out, size_t* used) {
     return S_OK;
 }
 
+// ---- XErrorReport ----
+// The retail executable resolves "XErrorReport" via GetProcAddress during XGameRuntimeInitialize.
+// Without this export the runtime refuses to initialise and the process hits an int3 breakpoint.
+// Our implementation logs the error to stderr for diagnostics and returns S_OK so boot continues.
+HRESULT __stdcall XErrorReport(HRESULT hr, const char* message) {
+    if (message && message[0])
+        std::fprintf(stderr, "[rt] xgameruntime: XErrorReport hr=%#lx msg=\"%s\"\n",
+                     static_cast<unsigned long>(hr), message);
+    else
+        std::fprintf(stderr, "[rt] xgameruntime: XErrorReport hr=%#lx\n",
+                     static_cast<unsigned long>(hr));
+    return S_OK;
+}
+
 #define XGR(name) {"xgameruntime.dll", #name, reinterpret_cast<void*>(&name)}
 
 }  // namespace
@@ -86,6 +100,7 @@ SHIM_TABLE(xgameruntime,
     XGR(XGameRuntimeUninitialize),
     XGR(XSystemGetDeviceType),
     XGR(XSystemGetConsoleId),
+    XGR(XErrorReport),
     // XTaskQueue (third_party/xtaskqueue)
     XGR(XTaskQueueCreate),
     XGR(XTaskQueueCreateComposite),
