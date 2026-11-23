@@ -39,9 +39,10 @@ jobs:
             exit 0
           fi
           python3 << 'PYEOF'
-          import json, os, re, sys
+          import json, os, sys
           from datetime import datetime, timezone
           from urllib.request import Request, urlopen
+          from urllib.error import HTTPError
 
           title = os.environ.get("PR_TITLE", "Atualização de dependência")
           url = os.environ.get("PR_URL", "")
@@ -49,64 +50,74 @@ jobs:
           branch = os.environ.get("PR_BRANCH", "")
           body = os.environ.get("PR_BODY", "") or ""
 
+          import re
           m = re.search(r"from\s+([\d.\w\-]+)\s+to\s+([\d.\w\-]+)", title, re.I)
           old_ver = m.group(1) if m else "desconhecida"
           new_ver = m.group(2) if m else "desconhecida"
 
           if "github-actions" in title.lower() or "github-actions" in branch:
-              upd_type = "⚙️ GitHub Action"
+              upd_type = "GitHub Action"
           elif "submodule" in title.lower() or "submodule" in branch:
-              upd_type = "📁 Submódulo"
+              upd_type = "Submodulo"
           else:
-              upd_type = "📦 Dependência"
+              upd_type = "Dependencia"
 
           bl = body.lower()
           if "security" in bl or "cve" in bl:
-              severity, color = "🔴 Segurança", 15158332
+              severity, color = "Seguranca", 15158332
           elif "breaking" in bl or "major" in bl:
-              severity, color = "🟡 Atenção", 16776960
+              severity, color = "Atencao", 16776960
           else:
-              severity, color = "🟢 Rotina", 5814783
+              severity, color = "Rotina", 5814783
 
-          ascii_block = f"""```
-          | ATUALIZAÇÃO DETECTADA NO DEDSEC       |
-          | {upd_type.upper():35s} |
-          |---------------------------------------|
-          | Versão Anterior: {old_ver:19s} |
-          | Nova Versão:     {new_ver:19s} |
-          | Branch:          {branch[:19]:19s} |
-          | Severidade:      {severity:19s} |
-          ----------------------------------------
-          | Em 1-3 dias após o merge, o build     |
-          | será recompilado e testado.           |
-          ----------------------------------------```"""
+          ascii_block = (
+              "```\n"
+              "| ATUALIZACAO DETECTADA NO DEDSEC   |\n"
+              f"| {upd_type.upper():35s} |\n"
+              "|---------------------------------------|\n"
+              f"| Versao Anterior: {old_ver:19s} |\n"
+              f"| Nova Versao:     {new_ver:19s} |\n"
+              f"| Branch:          {branch[:19]:19s} |\n"
+              f"| Severidade:      {severity:19s} |\n"
+              "----------------------------------------\n"
+              "| Em 1-3 dias apos o merge, o build  |\n"
+              "| sera recompilado e testado.        |\n"
+              "----------------------------------------```"
+          )
 
           preview = body[:500].replace("\r\n", "\n").replace("\n", " ")
           if len(body) > 500:
-              preview += "…"
+              preview += "..."
 
           payload = {
               "content": "@everyone",
               "embeds": [{
-                  "title": f"🔄 {title}",
-                  "description": f"{ascii_block}\n\n📝 **Detalhes:**\n{preview or 'Sem descrição adicional.'}",
+                  "title": title,
+                  "description": f"{ascii_block}\n\n**Detalhes:**\n{preview or 'Sem descricao adicional.'}",
                   "url": url,
                   "color": color,
                   "fields": [
-                      {"name": "🔗 Link do PR", "value": f"[Clique aqui]({url})", "inline": False},
-                      {"name": "👤 Autor", "value": f"`{author}`", "inline": True},
-                      {"name": "📌 Tipo", "value": f"`{upd_type}`", "inline": True},
-                      {"name": "⚠️ Severidade", "value": f"`{severity}`", "inline": True}
+                      {"name": "Link do PR", "value": f"[Clique aqui]({url})", "inline": False},
+                      {"name": "Autor", "value": f"`{author}`", "inline": True},
+                      {"name": "Tipo", "value": f"`{upd_type}`", "inline": True},
+                      {"name": "Severidade", "value": f"`{severity}`", "inline": True}
                   ],
-                  "footer": {"text": "DedSec Auto-Update • Gerado automaticamente"},
+                  "footer": {"text": "DedSec Auto-Update"},
                   "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
               }]
           }
 
+          webhook_url = os.environ["WEBHOOK_URL"].strip()
           data = json.dumps(payload).encode("utf-8")
-          req = Request(os.environ["WEBHOOK_URL"], data=data, headers={"Content-Type": "application/json"})
-          resp = urlopen(req)
-          print(f"✅ Notificação enviada (HTTP {resp.status})")
+          req = Request(webhook_url, data=data, headers={"Content-Type": "application/json"})
+          try:
+              resp = urlopen(req)
+              print(f"Notificacao enviada (HTTP {resp.status})")
+          except HTTPError as e:
+              err_body = e.read().decode("utf-8", errors="replace")
+              print(f"::error::Discord retornou HTTP {e.code}: {err_body}")
+              print(f"::error::URL usada: {webhook_url[:50]}...")
+              sys.exit(1)
           PYEOF
 
   notify-merge:
@@ -127,6 +138,7 @@ jobs:
           import json, os, sys
           from datetime import datetime, timezone
           from urllib.request import Request, urlopen
+          from urllib.error import HTTPError
 
           title = os.environ.get("PR_TITLE", "")
           url = os.environ.get("PR_URL", "")
@@ -134,38 +146,46 @@ jobs:
           branch = os.environ.get("PR_BRANCH", "")
           base = os.environ.get("BASE_BRANCH", "main")
 
-          ascii_block = f"""```
-          | MERGE REALIZADO NO DEDSEC             |
-          | ✅ Pull Request Aprovado e Mesclado   |
-          |---------------------------------------|
-          | PR:      {title[:25]:25s} |
-          | De:      {branch[:25]:25s} |
-          | Para:    {base[:25]:25s} |
-          | Autor:   {author[:25]:25s} |
-          ----------------------------------------
-          | O build será recompilado e testado    |
-          | nas próximas horas.                   |
-          ----------------------------------------```"""
+          ascii_block = (
+              "```\n"
+              "| MERGE REALIZADO NO DEDSEC         |\n"
+              "| Pull Request Aprovado e Mesclado  |\n"
+              "|---------------------------------------|\n"
+              f"| PR:     {title[:25]:25s} |\n"
+              f"| De:     {branch[:25]:25s} |\n"
+              f"| Para:   {base[:25]:25s} |\n"
+              f"| Autor:  {author[:25]:25s} |\n"
+              "----------------------------------------\n"
+              "| O build sera recompilado e testado |\n"
+              "| nas proximas horas.               |\n"
+              "----------------------------------------```"
+          )
 
           payload = {
               "content": "@everyone",
               "embeds": [{
-                  "title": f"✅ Merge: {title}",
+                  "title": f"Merge: {title}",
                   "description": ascii_block,
                   "url": url,
                   "color": 3066993,
                   "fields": [
-                      {"name": "🔗 Link do PR", "value": f"[Clique aqui]({url})", "inline": False}
+                      {"name": "Link do PR", "value": f"[Clique aqui]({url})", "inline": False}
                   ],
-                  "footer": {"text": "DedSec CI • Merge detectado"},
+                  "footer": {"text": "DedSec CI - Merge detectado"},
                   "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
               }]
           }
 
+          webhook_url = os.environ["WEBHOOK_URL"].strip()
           data = json.dumps(payload).encode("utf-8")
-          req = Request(os.environ["WEBHOOK_URL"], data=data, headers={"Content-Type": "application/json"})
-          resp = urlopen(req)
-          print(f"✅ Notificação de merge enviada (HTTP {resp.status})")
+          req = Request(webhook_url, data=data, headers={"Content-Type": "application/json"})
+          try:
+              resp = urlopen(req)
+              print(f"Notificacao de merge enviada (HTTP {resp.status})")
+          except HTTPError as e:
+              err_body = e.read().decode("utf-8", errors="replace")
+              print(f"::error::Discord retornou HTTP {e.code}: {err_body}")
+              sys.exit(1)
           PYEOF
 
   notify-branch:
@@ -184,47 +204,55 @@ jobs:
           import json, os, sys
           from datetime import datetime, timezone
           from urllib.request import Request, urlopen
+          from urllib.error import HTTPError
 
           branch = os.environ.get("BRANCH_NAME", "")
           creator = os.environ.get("CREATOR", "")
           repo_url = os.environ.get("REPO_URL", "")
 
-          # Ignora branches do Dependabot (já têm notificação própria)
           if branch.startswith("dependabot/"):
-              print("Branch do Dependabot ignorada (notificação separada)")
+              print("Branch do Dependabot ignorada")
               sys.exit(0)
 
-          ascii_block = f"""```
-          | NOVA BRANCH CRIADA NO DEDSEC          |
-          | 🌿 Desenvolvimento em Andamento       |
-          |---------------------------------------|
-          | Branch:  {branch[:27]:27s} |
-          | Criador: {creator[:27]:27s} |
-          ----------------------------------------
-          | Trabalho em progresso. Aguarde o PR   |
-          | para revisão e merge.                 |
-          ----------------------------------------```"""
+          ascii_block = (
+              "```\n"
+              "| NOVA BRANCH CRIADA NO DEDSEC      |\n"
+              "| Desenvolvimento em Andamento      |\n"
+              "|---------------------------------------|\n"
+              f"| Branch:  {branch[:27]:27s} |\n"
+              f"| Criador: {creator[:27]:27s} |\n"
+              "----------------------------------------\n"
+              "| Trabalho em progresso. Aguarde o PR |\n"
+              "| para revisao e merge.              |\n"
+              "----------------------------------------```"
+          )
 
           payload = {
               "content": "@everyone",
               "embeds": [{
-                  "title": f"🌿 Nova Branch: `{branch}`",
+                  "title": f"Nova Branch: `{branch}`",
                   "description": ascii_block,
                   "url": f"{repo_url}/tree/{branch}",
                   "color": 3447003,
                   "fields": [
-                      {"name": "👤 Criador", "value": f"`{creator}`", "inline": True},
-                      {"name": "🌿 Branch", "value": f"`{branch}`", "inline": True}
+                      {"name": "Criador", "value": f"`{creator}`", "inline": True},
+                      {"name": "Branch", "value": f"`{branch}`", "inline": True}
                   ],
-                  "footer": {"text": "DedSec Dev • Nova branch detectada"},
+                  "footer": {"text": "DedSec Dev - Nova branch detectada"},
                   "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
               }]
           }
 
+          webhook_url = os.environ["WEBHOOK_URL"].strip()
           data = json.dumps(payload).encode("utf-8")
-          req = Request(os.environ["WEBHOOK_URL"], data=data, headers={"Content-Type": "application/json"})
-          resp = urlopen(req)
-          print(f"✅ Notificação de branch enviada (HTTP {resp.status})")
+          req = Request(webhook_url, data=data, headers={"Content-Type": "application/json"})
+          try:
+              resp = urlopen(req)
+              print(f"Notificacao de branch enviada (HTTP {resp.status})")
+          except HTTPError as e:
+              err_body = e.read().decode("utf-8", errors="replace")
+              print(f"::error::Discord retornou HTTP {e.code}: {err_body}")
+              sys.exit(1)
           PYEOF
 
   notify-push:
@@ -246,6 +274,7 @@ jobs:
           import json, os, sys
           from datetime import datetime, timezone
           from urllib.request import Request, urlopen
+          from urllib.error import HTTPError
 
           branch = os.environ.get("PUSH_BRANCH", "")
           pusher = os.environ.get("PUSHER", "")
@@ -253,42 +282,50 @@ jobs:
           repo_url = os.environ.get("REPO_URL", "")
           count = os.environ.get("COMMIT_COUNT", "1")
 
-          # Ignora pushes em branches do Dependabot
           if branch.startswith("dependabot/"):
               sys.exit(0)
 
-          ascii_block = f"""```
-          | PUSH DIRETO NO DEDSEC                 |
-          | 📤 Commits Enviados                   |
-          |---------------------------------------|
-          | Branch:   {branch[:26]:26s} |
-          | Autor:    {pusher[:26]:26s} |
-          | Commits:  {count:26s} |
-          | Mensagem: {commit_msg[:26]:26s} |
-          ----------------------------------------
-          | Mudanças diretas na branch.           |
-          | Verifique se testes passam.           |
-          ----------------------------------------```"""
+          ascii_block = (
+              "```\n"
+              "| PUSH DIRETO NO DEDSEC             |\n"
+              "| Commits Enviados                  |\n"
+              "|---------------------------------------|\n"
+              f"| Branch:   {branch[:26]:26s} |\n"
+              f"| Autor:    {pusher[:26]:26s} |\n"
+              f"| Commits:  {count:26s} |\n"
+              f"| Mensagem: {commit_msg[:26]:26s} |\n"
+              "----------------------------------------\n"
+              "| Mudancas diretas na branch.       |\n"
+              "| Verifique se testes passam.       |\n"
+              "----------------------------------------```"
+          )
 
           payload = {
               "content": "@everyone",
               "embeds": [{
-                  "title": f"📤 Push em `{branch}`",
+                  "title": f"Push em `{branch}`",
                   "description": ascii_block,
                   "url": f"{repo_url}/commits/{branch}",
                   "color": 10181046,
                   "fields": [
-                      {"name": "👤 Autor", "value": f"`{pusher}`", "inline": True},
-                      {"name": "🌿 Branch", "value": f"`{branch}`", "inline": True},
-                      {"name": "📝 Commit", "value": f"`{commit_msg}`", "inline": False}
+                      {"name": "Autor", "value": f"`{pusher}`", "inline": True},
+                      {"name": "Branch", "value": f"`{branch}`", "inline": True},
+                      {"name": "Commit", "value": f"`{commit_msg}`", "inline": False}
                   ],
-                  "footer": {"text": "DedSec CI • Push detectado"},
+                  "footer": {"text": "DedSec CI - Push detectado"},
                   "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
               }]
           }
 
+          webhook_url = os.environ["WEBHOOK_URL"].strip()
           data = json.dumps(payload).encode("utf-8")
-          req = Request(os.environ["WEBHOOK_URL"], data=data, headers={"Content-Type": "application/json"})
-          resp = urlopen(req)
-          print(f"✅ Notificação de push enviada (HTTP {resp.status})")
+          req = Request(webhook_url, data=data, headers={"Content-Type": "application/json"})
+          try:
+              resp = urlopen(req)
+              print(f"Notificacao de push enviada (HTTP {resp.status})")
+          except HTTPError as e:
+              err_body = e.read().decode("utf-8", errors="replace")
+              print(f"::error::Discord retornou HTTP {e.code}: {err_body}")
+              print(f"::error::URL usada (primeiros 60 chars): {webhook_url[:60]}...")
+              sys.exit(1)
           PYEOF
