@@ -83,14 +83,23 @@ Baseado nos critérios do [PortWatch VI](https://4lwayz.github.io/portwatch-vi/#
 
 | Critério | DedSec | Meta 25% | Detalhes |
 |----------|--------|----------|----------|
-| **Preparação** | **22/25** | 25/25 | Infraestrutura completa antes do boot |
+| **Preparação** | **24/25** | 25/25 | Frame clock + CPU writes + D3D12.X proxy integrados |
 | **Shaders traduzidos** | **26.503/26.503 (100%)** | — | Todas as 1.630 formas gfx1030 |
 | **Performance** | 🔄 Em teste | 30+ FPS | FPS médio ÷ 30 |
-| **Confiabilidade** | 🔄 Em teste | Estável | De crashes → estável |
-| **Boot do jogo** | ❌ Pendente | ✅ | Bloqueado pelo executável real |
-| **In-game jogável** | ❌ Pendente | ✅ | — |
+| **Confiabilidade** | 🔄 Em teste | Estável | 19/20 testes passando |
+| **Boot do jogo** | 🔴 Em progresso | ✅ | [P0] kernelx (#3) + VFS/RPF9 (#4) em andamento |
+| **In-game jogável** | ❌ Pendente | ✅ | Depende de boot + render (#5) |
 
-> 💡 **Diferencial DedSec vs XCL**: Tradução RDNA2→HLSL cobre **todas as 1.630 formas de instrução** gfx1030. Pipeline DX12 nativo (2 saltos) vs Vulkan/SPIR-V (3 saltos). FSR3 nativo. Controles mouse/teclado otimizados.
+> 💡 **Diferencial DedSec vs XCL**: Tradução RDNA2→HLSL cobre **todas as 1.630 formas de instrução** gfx1030. Pipeline DX12 nativo (2 saltos) vs Vulkan/SPIR-V (3 saltos). FSR3 nativo. Controles mouse/teclado otimizados. VRAM-conscious design para GTX 1650 4GB.
+
+### 🎯 Sprint Ativo: Boot até o Menu Principal
+| Issue | Componente | Status | Prioridade |
+|-------|-----------|--------|------------|
+| [#3](https://github.com/Hylanderry/DedSec/issues/3) | kernelx.dll (memory + sync) | 🔴 Header criado, impl em progresso | P0 |
+| [#4](https://github.com/Hylanderry/DedSec/issues/4) | VFS / RPF9 Reader | 🔴 Planejamento | P0 |
+| [#5](https://github.com/Hylanderry/DedSec/issues/5) | D3D12.X Replay + PresentX | 🔴 Planejamento | P0 |
+
+> 📋 Roadmap completo: [docs/BOOT_ROADMAP.md](docs/BOOT_ROADMAP.md) — 12 blockers mapeados, plano em 4 fases
 
 ---
 
@@ -166,10 +175,16 @@ python -I tools/rdna2spirv.py <work>/shaders/dxbc/disasm --out <scratch> --shard
 | Async Compute Dispatcher | ✅ Integrado | Dispatch assíncrono via command queue |
 | Hi-Z Occlusion Culling | ✅ Integrado | Culling hierárquico de profundidade |
 | VRS Tile Classification | ✅ Integrado | Classificação de tiles para shading variável |
-| PE Loader + Import Shims | ⚠️ Parcial | Stand-in funcional; aguardando binário real |
-| D3D12 Xbox ABI Proxy | ⚠️ Em progresso | Device, queues, command lists, descriptors |
+| PE Loader + TLS /GA Patch | ✅ Completo | Boot do exe retail com TLS slot fix |
+| D3D12.X Device Proxy (vtable) | ✅ Completo | Slots 0-82 mapeados, frame clock + CPU writes integrados |
+| Frame Clock (slots 79-80) | ✅ Completo | Multi-type fire, lazy init, semaphore por tipo |
+| CPU Writes Bottom-of-Pipe (81-82) | ✅ Completo | Per-queue fence, ring buffer fixo, zero alloc/frame |
+| kernelx.dll Shim | 🔴 Header criado | [Issue #3](https://github.com/Hylanderry/DedSec/issues/3) — impl em progresso |
+| VFS / RPF9 Reader | 🔴 Planejamento | [Issue #4](https://github.com/Hylanderry/DedSec/issues/4) |
+| D3D12.X Command List Replay | 🔴 Planejamento | [Issue #5](https://github.com/Hylanderry/DedSec/issues/5) |
 | GDK Runtime (XTaskQueue) | ✅ Completo | XTaskQueue/XAsync vendored (libHttpClient MIT) |
-| Boot / Story Mode / Jogável | ❌ Não | Bloqueado pelo executável do jogo |
+| Test Suite | ✅ 19/20 | device_proxy, root_sig, pe_loader, dxc, gfx10_desc passando |
+| Boot / Menu Principal | 🔴 Em progresso | Sprint ativo — ver [BOOT_ROADMAP.md](docs/BOOT_ROADMAP.md) |
 
 ---
 
