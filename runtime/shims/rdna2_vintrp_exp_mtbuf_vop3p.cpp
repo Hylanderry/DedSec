@@ -283,16 +283,12 @@ std::string translate_mtbuf(const MtbufInstruction& instr) {
 // ── VOP3P → HLSL ────────────────────────────────────────────────────────────
 
 static std::string pk_src(uint8_t src, bool neg, bool hi) {
- std::ostringstream out;
- if (hi) {
- out << "pk_hi(v" << static_cast<int>(src) << ")";
- } else {
- out << "pk_lo(v" << static_cast<int>(src) << ")";
- }
- if (neg) {
- return std::string("-") + out.str();
- }
- return out.str();
+ std::string result;
+ if (neg) result += '-';
+ result += hi ? "pk_hi(v" : "pk_lo(v";
+ result += std::to_string(static_cast<int>(src));
+ result += ')';
+ return result;
 }
 
 std::string translate_vop3p(const Vop3pInstruction& instr) {

@@ -11,8 +11,7 @@
 
 #ifdef _WIN32
 #include <windows.h>
-#include <xaudio2.h>
-#pragma comment(lib, "xaudio2.lib")
+// xaudio2.h removed: stub-only implementation avoids ::IXAudio2 vs dedsec::audio::IXAudio2 type conflicts (C2664/C2039)
 #endif
 
 namespace dedsec {
@@ -214,9 +213,6 @@ private:
     bool m_initialized;
     uint32_t m_processingQuantum;
     std::string m_backendName;
-#ifdef _WIN32
-    ::IXAudio2* m_pXAudio2 = nullptr;
-#endif
 };
 
 // Factory function
