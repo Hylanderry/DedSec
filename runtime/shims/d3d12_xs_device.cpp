@@ -428,36 +428,42 @@ std::uint64_t WINAPI proxy_slot(DeviceProxy* self, std::uint64_t a1, std::uint64
     } else if constexpr (Slot == 79) {
         // ScheduleFrameEventX(type, offset_us, ancillary_block, flags)
         note_slot(Slot);
+        dedsec::frame_clock::initialise();  // lazy: only create threads when the game actually schedules events
         return hr_to_u64(dedsec::frame_clock::schedule(
             static_cast<uint32_t>(a1), static_cast<uint32_t>(a2),
             reinterpret_cast<const void*>(a3), static_cast<uint32_t>(a4)));
     } else if constexpr (Slot == 80) {
         // WaitFrameEventX(type, timeout_ms, ancillary_block, flags, token_in_out)
         note_slot(Slot);
+        dedsec::frame_clock::initialise();
         return hr_to_u64(dedsec::frame_clock::wait(
             static_cast<uint32_t>(a1), static_cast<uint32_t>(a2),
             reinterpret_cast<const void*>(a3), static_cast<uint32_t>(a4),
             reinterpret_cast<uint64_t*>(a5)));
     } else if constexpr (Slot == 81) {
-        // Write32BitValueBottomOfPipeX(va, value, queue_index)
+        // Write32BitValueBottomOfPipeX(queue, va, value)
         // The console writes a single dword; we enqueue it for CPU-side execution after GPU completion.
+        // a1 = ID3D12CommandQueue*, a2 = virtual address, a3 = 32-bit value to write.
         note_slot(Slot);
+        dedsec::cpu_writes::initialise();  // lazy: only create worker thread on first bottom-of-pipe write
         {
-            const uint32_t val = static_cast<uint32_t>(a2);
-            // Use the device's first command queue as default; real integration tracks per-queue fences.
-            // For now, pass nullptr to let cpu_writes create a fence lazily on first use.
-            return hr_to_u64(dedsec::cpu_writes::enqueue(
-                nullptr, 0, static_cast<uintptr_t>(a1), &val, 1));
+            auto* queue = reinterpret_cast<ID3D12CommandQueue*>(a1);
+            const uintptr_t va = static_cast<uintptr_t>(a2);
+            const uint32_t val = static_cast<uint32_t>(a3);
+            return hr_to_u64(dedsec::cpu_writes::enqueue(queue, 0, va, &val, 1));
         }
     } else if constexpr (Slot == 82) {
-        // Write64BitValueBottomOfPipeX(va, value, queue_index)
+        // Write64BitValueBottomOfPipeX(queue, va, value)
         // Split the 64-bit value into two dwords for the ring buffer.
+        // a1 = ID3D12CommandQueue*, a2 = virtual address, a3 = 64-bit value to write.
         note_slot(Slot);
+        dedsec::cpu_writes::initialise();
         {
-            const uint64_t val64 = a2;
+            auto* queue = reinterpret_cast<ID3D12CommandQueue*>(a1);
+            const uintptr_t va = static_cast<uintptr_t>(a2);
+            const uint64_t val64 = a3;
             const uint32_t vals[2] = {static_cast<uint32_t>(val64), static_cast<uint32_t>(val64 >> 32)};
-            return hr_to_u64(dedsec::cpu_writes::enqueue(
-                nullptr, 0, static_cast<uintptr_t>(a1), vals, 2));
+            return hr_to_u64(dedsec::cpu_writes::enqueue(queue, 0, va, vals, 2));
         }
     } else {
         note_slot(Slot);
@@ -553,6 +559,7 @@ HRESULT create_device_proxy(ID3D12Device* real, REFIID riid, void** out) {
     proxy->refs.store(1, std::memory_order_relaxed);
 
     const unsigned slot_count = proxy->slot_count;
+
     HRESULT hr = proxy_query_interface(proxy, &riid, out);
     if (FAILED(hr)) {
         // No reference escaped, and the caller still owns its reference to `real`.
