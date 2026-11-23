@@ -109,7 +109,10 @@ jobs:
 
           webhook_url = os.environ["WEBHOOK_URL"].strip()
           data = json.dumps(payload).encode("utf-8")
-          req = Request(webhook_url, data=data, headers={"Content-Type": "application/json"})
+          req = Request(webhook_url, data=data, headers={
+              "Content-Type": "application/json",
+              "User-Agent": "DedSec-CI/1.0"
+          })
           try:
               resp = urlopen(req)
               print(f"Notificacao enviada (HTTP {resp.status})")
@@ -178,7 +181,10 @@ jobs:
 
           webhook_url = os.environ["WEBHOOK_URL"].strip()
           data = json.dumps(payload).encode("utf-8")
-          req = Request(webhook_url, data=data, headers={"Content-Type": "application/json"})
+          req = Request(webhook_url, data=data, headers={
+              "Content-Type": "application/json",
+              "User-Agent": "DedSec-CI/1.0"
+          })
           try:
               resp = urlopen(req)
               print(f"Notificacao de merge enviada (HTTP {resp.status})")
@@ -245,7 +251,10 @@ jobs:
 
           webhook_url = os.environ["WEBHOOK_URL"].strip()
           data = json.dumps(payload).encode("utf-8")
-          req = Request(webhook_url, data=data, headers={"Content-Type": "application/json"})
+          req = Request(webhook_url, data=data, headers={
+              "Content-Type": "application/json",
+              "User-Agent": "DedSec-CI/1.0"
+          })
           try:
               resp = urlopen(req)
               print(f"Notificacao de branch enviada (HTTP {resp.status})")
@@ -319,7 +328,10 @@ jobs:
 
           webhook_url = os.environ["WEBHOOK_URL"].strip()
           data = json.dumps(payload).encode("utf-8")
-          req = Request(webhook_url, data=data, headers={"Content-Type": "application/json"})
+          req = Request(webhook_url, data=data, headers={
+              "Content-Type": "application/json",
+              "User-Agent": "DedSec-CI/1.0"
+          })
           try:
               resp = urlopen(req)
               print(f"Notificacao de push enviada (HTTP {resp.status})")
