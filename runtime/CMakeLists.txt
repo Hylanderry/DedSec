@@ -327,6 +327,8 @@ if(WIN32)
   if(D3D12_LIBRARY)
     add_executable(root_sig_test
       test/root_sig_test.cpp
+      src/dedsec_frame_clock.cpp
+      src/dedsec_cpu_writes.cpp
       shims/registry.cpp
       shims/d3d12_xs.cpp
       shims/d3d12_xs_device.cpp
@@ -351,6 +353,8 @@ if(WIN32)
     if(DXGI_LIBRARY)
       add_executable(device_proxy_test
         test/device_proxy_test.cpp
+        src/dedsec_frame_clock.cpp
+        src/dedsec_cpu_writes.cpp
         shims/registry.cpp
         shims/d3d12_xs.cpp
         shims/d3d12_xs_device.cpp
@@ -451,6 +455,8 @@ if(BUILD_TESTING)
     add_executable(pe_loader_test
       test/pe_loader_test.cpp
       src/pe_loader.cpp
+      src/dedsec_frame_clock.cpp
+      src/dedsec_cpu_writes.cpp
       shims/registry.cpp
       shims/xmem.cpp
       shims/d3d12_xs.cpp

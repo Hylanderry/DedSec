@@ -17,6 +17,9 @@
 #include <new>
 #include <utility>
 
+#include "../src/dedsec_frame_clock.h"
+#include "../src/dedsec_cpu_writes.h"
+
 namespace rt::d3d12_xs {
 namespace {
 
@@ -75,6 +78,10 @@ const char* slot_name(unsigned slot) {
         case 43: return "GetAdapterLuid";
         case 62: return "Xbox CreateComputePipelineState";
         case 76: return "Xbox resource creation";
+        case 79: return "ScheduleFrameEventX";
+        case 80: return "WaitFrameEventX";
+        case 81: return "Write32BitValueBottomOfPipeX";
+        case 82: return "Write64BitValueBottomOfPipeX";
         default: return "forwarded";
     }
 }
@@ -418,6 +425,40 @@ std::uint64_t WINAPI proxy_slot(DeviceProxy* self, std::uint64_t a1, std::uint64
             static_cast<D3D12_RESOURCE_STATES>(static_cast<std::uint32_t>(a4)),
             reinterpret_cast<const D3D12_CLEAR_VALUE*>(a5), reinterpret_cast<const IID*>(a6),
             reinterpret_cast<void**>(a7)));
+    } else if constexpr (Slot == 79) {
+        // ScheduleFrameEventX(type, offset_us, ancillary_block, flags)
+        note_slot(Slot);
+        return hr_to_u64(dedsec::frame_clock::schedule(
+            static_cast<uint32_t>(a1), static_cast<uint32_t>(a2),
+            reinterpret_cast<const void*>(a3), static_cast<uint32_t>(a4)));
+    } else if constexpr (Slot == 80) {
+        // WaitFrameEventX(type, timeout_ms, ancillary_block, flags, token_in_out)
+        note_slot(Slot);
+        return hr_to_u64(dedsec::frame_clock::wait(
+            static_cast<uint32_t>(a1), static_cast<uint32_t>(a2),
+            reinterpret_cast<const void*>(a3), static_cast<uint32_t>(a4),
+            reinterpret_cast<uint64_t*>(a5)));
+    } else if constexpr (Slot == 81) {
+        // Write32BitValueBottomOfPipeX(va, value, queue_index)
+        // The console writes a single dword; we enqueue it for CPU-side execution after GPU completion.
+        note_slot(Slot);
+        {
+            const uint32_t val = static_cast<uint32_t>(a2);
+            // Use the device's first command queue as default; real integration tracks per-queue fences.
+            // For now, pass nullptr to let cpu_writes create a fence lazily on first use.
+            return hr_to_u64(dedsec::cpu_writes::enqueue(
+                nullptr, 0, static_cast<uintptr_t>(a1), &val, 1));
+        }
+    } else if constexpr (Slot == 82) {
+        // Write64BitValueBottomOfPipeX(va, value, queue_index)
+        // Split the 64-bit value into two dwords for the ring buffer.
+        note_slot(Slot);
+        {
+            const uint64_t val64 = a2;
+            const uint32_t vals[2] = {static_cast<uint32_t>(val64), static_cast<uint32_t>(val64 >> 32)};
+            return hr_to_u64(dedsec::cpu_writes::enqueue(
+                nullptr, 0, static_cast<uintptr_t>(a1), vals, 2));
+        }
     } else {
         note_slot(Slot);
         if (Slot >= self->slot_count) {
@@ -548,7 +589,8 @@ ID3D12Device* device_proxy_real_device(const void* device) {
 }
 
 bool device_slot_overridden(unsigned slot) {
-    return slot <= 2 || slot == 14 || slot == 62 || slot == 76;
+    return slot <= 2 || slot == 14 || slot == 62 || slot == 76 ||
+           slot == 79 || slot == 80 || slot == 81 || slot == 82;
 }
 
 bool heap_slot_overridden(unsigned slot) {
