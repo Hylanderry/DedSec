@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://discord.gg/H3XmbVa77Y">
-    <img src="https://img.shields.io/discord/1337000000000000000?color=5865F2&label=Discord&logo=discord&logoColor=white&style=for-the-badge" alt="Discord">
+    <img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord">
   </a>
 </p>
 
@@ -31,7 +31,7 @@
 
 > **Junte-se ao nosso servidor Discord para acompanhar o desenvolvimento em tempo real!**
 >
-> <a href="https://discord.gg/H3XmbVa77Y"><img src="https://img.shields.io/discord/1337000000000000000?color=5865F2&label=DedSec%20Community&logo=discord&logoColor=white&style=for-the-badge" alt="DedSec Discord"></a>
+> <a href="https://discord.gg/H3XmbVa77Y"><img src="https://img.shields.io/badge/DedSec_Community-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="DedSec Discord"></a>
 >
 > 🔔 Notificações automáticas de updates, merges, branches e pushes<br>
 > 🛠️ Suporte técnico e discussão de desenvolvimento<br>
