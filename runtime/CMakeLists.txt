@@ -115,6 +115,24 @@ if(WIN32)
   target_compile_options(dedsec_fsr3 PRIVATE /W4 /permissive- /utf-8)
   target_link_libraries(dedsec_fsr3 PRIVATE d3d12 dxgi dedsec_gpu_tier dedsec_shader_cache dedsec_pso_warmup dedsec_async_compute)
 
+  # DedSec XBCH Parser — Xbox Series shader container extraction (DXBC→XDAT→XBCH→FSSM)
+  add_library(dedsec_xbch_parser STATIC
+    src/xbch_parser.cpp
+  )
+  target_include_directories(dedsec_xbch_parser PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_compile_definitions(dedsec_xbch_parser PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(dedsec_xbch_parser PRIVATE /W4 /permissive- /utf-8)
+  # No external zlib dependency — uses built-in DEFLATE stored-block decompressor
+
+  # DedSec Async PSO Framework — non-blocking pipeline creation with stand-in PSOs
+  add_library(dedsec_async_pso STATIC
+    shims/dedsec_async_pso.cpp
+  )
+  target_include_directories(dedsec_async_pso PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/shims)
+  target_compile_definitions(dedsec_async_pso PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(dedsec_async_pso PRIVATE /W4 /permissive- /utf-8)
+  target_link_libraries(dedsec_async_pso PRIVATE d3d12 dedsec_dxc_compiler dedsec_xbch_parser)
+
   # DedSec RDNA2 → HLSL SM 6.6 Translator
   add_library(dedsec_rdna2_translator STATIC
     shims/rdna2_to_hlsl.cpp
