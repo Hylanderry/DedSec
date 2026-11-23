@@ -35,6 +35,13 @@ struct Module {
     bool has_tls_slot = false;
     bool initialised = false;
 
+    // /GA TLS patch: an EXE built with /GA reads its own TLS as ThreadLocalStoragePointer[0] without _tls_index.
+    // When mapped into another process, index 0 belongs to the host EXE, so every gs:[58h] read is rewritten to
+    // gs:[1480h + 8 * tls_ga_slot] (TEB->TlsSlots). Set LEONIDA_TLS_GA_PATCH=0 to disable.
+    uint32_t tls_ga_slot = 0;
+    bool has_tls_ga_slot = false;
+    size_t tls_ga_sites = 0;
+
     // The image's exception directory (.pdata), registered with RtlAddFunctionTable by load() so that exception
     // dispatch and stack walks can unwind through its frames. Removed when the loader is destroyed.
     void* function_table = nullptr;

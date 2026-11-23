@@ -52,12 +52,63 @@ bool prefer_host_copy(const std::string& dll) {
     return false;
 }
 
+// Checks whether the /GA TLS patch is enabled (default: yes). Set LEONIDA_TLS_GA_PATCH=0 to disable.
+bool ga_tls_patch_enabled() {
+    char v[8] = {};
+    size_t n = 0;
+    return !(getenv_s(&n, v, sizeof(v), "LEONIDA_TLS_GA_PATCH") == 0 && n == 2 && v[0] == '0');
+}
+
+// Rewrites a /GA EXE's slot-0 TLS reads: every `mov r64, gs:[58h]` (segment prefix 0x65, REX.W 0x48 or REX.W+REX.R
+// 0x4C, opcode 0x8B, ModRM with mod=00 reg=r/m=100 → SIB follows, SIB=0x25 → disp32 follows, disp32=0x58) in an
+// executable section becomes the same instruction with disp32 = 0x1480 + 8 * slot (TEB->TlsSlots[slot]). Same length,
+// so nothing else moves. The 9-byte form with that exact segment prefix, SIB and displacement is not something code
+// or tables produce by accident. Must run before protect_sections() and before any of the image's code runs.
+size_t patch_ga_tls_reads(Module& m, uint32_t slot) {
+    auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(m.base);
+    auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(m.base + dos->e_lfanew);
+    const IMAGE_SECTION_HEADER* sec = IMAGE_FIRST_SECTION(nt);
+    const uint32_t disp = 0x1480u + 8u * slot;
+    size_t sites = 0;
+    for (unsigned i = 0; i < nt->FileHeader.NumberOfSections; ++i, ++sec) {
+        if (!(sec->Characteristics & IMAGE_SCN_MEM_EXECUTE)) continue;
+        const uint32_t size = std::min(sec->Misc.VirtualSize, sec->SizeOfRawData);
+        if (sec->VirtualAddress > m.size || size > m.size - sec->VirtualAddress || size < 9) continue;
+        uint8_t* p = m.base + sec->VirtualAddress;
+        for (uint32_t k = 0; k + 9 <= size; ++k) {
+            // Match: 65 [48|4C] 8B [ModRM: mod=00, r/m=100] 25 58 00 00 00
+            if (p[k] != 0x65) continue;
+            if (p[k + 1] != 0x48 && p[k + 1] != 0x4C) continue;
+            if (p[k + 2] != 0x8B) continue;
+            const uint8_t modrm = p[k + 3];
+            if ((modrm & 0xC7) != 0x04) continue;  // mod=00, r/m=100 (SIB follows)
+            if (p[k + 4] != 0x25) continue;         // SIB: scale=0, index=none, base=disp32
+            uint32_t d;
+            std::memcpy(&d, p + k + 5, 4);
+            if (d != 0x58) continue;
+            std::memcpy(p + k + 5, &disp, 4);
+            ++sites;
+            k += 8;  // skip past the patched instruction
+        }
+    }
+    return sites;
+}
+
 }  // namespace
 
 Loader::~Loader() {
     for (auto* m : order_) {
         // Before the image is freed: a stale table would let a later stack walk read unmapped memory.
         if (m->function_table) RtlDeleteFunctionTable(static_cast<PRUNTIME_FUNCTION>(m->function_table));
+        // Clean up /GA TLS view allocated for this module's thread-local slot-0 reads.
+        if (m->has_tls_ga_slot) {
+            void** view = static_cast<void**>(TlsGetValue(m->tls_ga_slot));
+            if (view) {
+                TlsSetValue(m->tls_ga_slot, nullptr);
+                VirtualFree(view, 0, MEM_RELEASE);
+            }
+            TlsFree(m->tls_ga_slot);
+        }
         if (m->tls_block) VirtualFree(m->tls_block, 0, MEM_RELEASE);
         if (m->has_tls_slot) TlsFree(m->tls_slot);
         if (m->base) VirtualFree(m->base, 0, MEM_RELEASE);
@@ -137,6 +188,7 @@ void Loader::initialise(Module& m) {
         require_range(m.name, tls_dir.VirtualAddress, sizeof(IMAGE_TLS_DIRECTORY64), m.size, "the TLS directory");
         auto* tls = at<IMAGE_TLS_DIRECTORY64>(m.base, tls_dir.VirtualAddress);
 
+        DWORD slot = 0;  // declared here so the /GA patch below can check it safely
         uint64_t start = 0, template_size = 0;
         if (tls->StartAddressOfRawData || tls->EndAddressOfRawData) {
             start = rva_of(tls->StartAddressOfRawData, "the TLS template");
@@ -157,7 +209,7 @@ void Loader::initialise(Module& m) {
         if (tls->AddressOfIndex) {
             uint64_t index_rva = rva_of(tls->AddressOfIndex, "the TLS index");
             require_range(m.name, index_rva, sizeof(uint32_t), m.size, "the TLS index");
-            DWORD slot = TlsAlloc();
+            slot = TlsAlloc();
             if (slot == TLS_OUT_OF_INDEXES) throw std::runtime_error(m.name + ": no TLS slot is free");
             m.tls_slot = slot;
             m.has_tls_slot = true;
@@ -170,6 +222,36 @@ void Loader::initialise(Module& m) {
                 throw std::runtime_error(m.name + ": the TLS index can't be written");
             *reinterpret_cast<uint32_t*>(index) = slot;
             VirtualProtect(page, 0x1000, old, &ignored);
+        }
+
+        // /GA TLS patch: an EXE built with /GA reads its own TLS at index 0 directly (gs:[58h]) because the process
+        // EXE always owns slot 0. Mapped into another host process, slot 0 belongs to the host, so every such read
+        // faults or returns wrong data. Patch each gs:[58h] in executable sections to gs:[1480h + 8 * ga_slot], a
+        // TlsAlloc slot whose per-thread value is a small view with this module's block at [0]. Must run before
+        // protect_sections() and before any of the image's code (TLS callbacks included).
+        if (!(nt->FileHeader.Characteristics & IMAGE_FILE_DLL) && m.tls_block_size && slot != 0 && ga_tls_patch_enabled()) {
+            DWORD ga_slot = TlsAlloc();
+            if (ga_slot == TLS_OUT_OF_INDEXES || ga_slot >= 64) {
+                fprintf(stderr, "[rt] loader: %s: no TlsAlloc slot below 64 for /GA TLS patch\n", m.name.c_str());
+            } else {
+                m.tls_ga_sites = patch_ga_tls_reads(m, ga_slot);
+                if (m.tls_ga_sites) {
+                    m.tls_ga_slot = ga_slot;
+                    m.has_tls_ga_slot = true;
+                    // Install the /GA view for the current thread so TLS callbacks (which run next) see correct TLS.
+                    auto** view = static_cast<void**>(VirtualAlloc(nullptr, 64 * sizeof(void*),
+                                                                   MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE));
+                    if (view) {
+                        view[0] = m.tls_block;
+                        view[slot] = m.tls_block;
+                        TlsSetValue(ga_slot, view);
+                    }
+                    fprintf(stderr, "[rt] loader: %s: patched %zu /GA TLS reads (gs:[58h] -> gs:[%Xh]); "
+                            "module TLS index=%u, GA slot=%lu\n",
+                            m.name.c_str(), m.tls_ga_sites, 0x1480u + 8u * ga_slot, slot,
+                            static_cast<unsigned long>(ga_slot));
+                }
+            }
         }
 
         if (tls->AddressOfCallBacks) {
